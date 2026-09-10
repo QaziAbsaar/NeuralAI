@@ -21,7 +21,7 @@ const LABELS = {
 let tray = null
 let statusItem = null
 
-export function createTray(onQuit, onToggle) {
+export function createTray(onQuit, onToggle, onScratch) {
   tray = new Tray(nativeImage.createFromPath(ICONS.idle))
 
   statusItem = { label: LABELS.idle, enabled: false }
@@ -29,6 +29,7 @@ export function createTray(onQuit, onToggle) {
     statusItem,
     { type: 'separator' },
     { label: 'Toggle recording', click: onToggle },
+    { label: 'Scratch last dictation', click: () => onScratch?.() },
     { label: 'Quit', click: onQuit },
   ])
 

@@ -46,7 +46,7 @@ async function readClipboard() {
   return clipboard.readText()
 }
 
-async function writeClipboard(text) {
+export async function writeClipboard(text) {
   if (isWayland) {
     // wl-copy reads stdin and forks to the background to serve the selection.
     const result = await run('wl-copy', [], text)
@@ -84,9 +84,11 @@ async function pasteKeystroke() {
   return ydotoolPaste()
 }
 
-// Returns true if a paste was fired. NOTE: synthetic keystrokes cannot be
-// confirmed delivered — if every strategy fails this reports false and the
-// text is left on the clipboard with a notification.
+// Returns the clipboard content that was saved before the paste (for
+// history/undo) on success, or false if no paste could be fired. NOTE:
+// synthetic keystrokes cannot be confirmed delivered — if every strategy
+// fails this returns false and the text is left on the clipboard with a
+// notification.
 export async function injectText(text, notify) {
   const savedClipboard = await readClipboard()
   await writeClipboard(text)
@@ -101,5 +103,25 @@ export async function injectText(text, notify) {
   setTimeout(() => {
     writeClipboard(savedClipboard).catch(() => {})
   }, CLIPBOARD_RESTORE_DELAY_MS)
-  return true
+  return savedClipboard
+}
+
+// "Scratch that" support — delete the last n characters before the cursor.
+// KEY_BACKSPACE = 14 on Linux.
+export async function backspaceChars(n) {
+  if (n <= 0) return true
+  if (isWayland) {
+    const seq = []
+    for (let i = 0; i < n; i++) seq.push('14:1', '14:0')
+    if ((await run('ydotool', ['key', ...seq])) !== null) return true
+  }
+  try {
+    for (let i = 0; i < n; i++) {
+      await keyboard.pressKey(Key.Backspace)
+      await keyboard.releaseKey(Key.Backspace)
+    }
+    return true
+  } catch {
+    return false
+  }
 }

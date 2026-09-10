@@ -18,12 +18,14 @@ import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 import { loadEnv, transcribe } from './transcribe.js'
 import { getActiveWindowContext } from './context.js'
 import { polishTranscript } from './polish.js'
-import { injectText } from './inject.js'
+import { injectText, backspaceChars, writeClipboard } from './inject.js'
+import { recordDictation, popDictation } from './history.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Toggle invoked from a second instance ("--toggle") — wired up after ready.
 let toggleRecording = () => {}
+let undoLastDictation = () => {}
 
 const gotInstanceLock = app.requestSingleInstanceLock()
 if (!gotInstanceLock) {
@@ -109,7 +111,7 @@ app.whenReady().then(() => {
     console.log('[main] auto-stopped (VAD) -> idle')
   })
 
-  createTray(() => app.quit(), toggleRecording)
+  createTray(() => app.quit(), toggleRecording, undoLastDictation)
 
   const HOTKEY = 'Control+Space'
   const ok = registerHotkey(HOTKEY, toggleRecording)
@@ -148,20 +150,49 @@ app.whenReady().then(() => {
       const ok = await injectText(polished, (msg) => {
         if (Notification.isSupported()) new Notification({ body: msg }).show()
       })
-      console.log(`[inject] ${ok ? 'pasted' : 'failed — text left on clipboard'}`)
+      console.log(`[inject] ${ok === false ? 'failed — text left on clipboard' : 'pasted'}`)
+      if (ok !== false) {
+        recordDictation({
+          ts: Date.now(),
+          transcript,
+          polished,
+          clipboardBefore: ok,
+        })
+      }
     } catch (err) {
       console.error(`[pipeline] failed: ${err.message}`)
     }
   })
+
+  // "Scratch that" — undo the last dictation: backspace out the injected
+  // text and put the user's pre-dictation clipboard back. Caveat: assumes the
+  // cursor is still right after the pasted text and nothing was typed since.
+  undoLastDictation = async () => {
+    const entry = popDictation()
+    if (!entry) {
+      console.log('[scratch] nothing to undo')
+      if (Notification.isSupported()) {
+        new Notification({ body: 'Nothing to undo.' }).show()
+      }
+      return
+    }
+    await backspaceChars(entry.polished.length)
+    await writeClipboard(entry.clipboardBefore)
+    console.log('[scratch] removed last dictation')
+    if (Notification.isSupported()) {
+      new Notification({ body: 'Removed last dictation.' }).show()
+    }
+  }
 
   // Keep running in the background when windows close — this is a tray app.
   // Subscribing (even as a no-op) overrides Electron's default quit-on-all-closed.
   app.on('window-all-closed', () => {})
 })
 
-// Second instance launched with --toggle: flip recording in the live instance.
+// Second instance launched with --toggle / --scratch: act in the live instance.
 app.on('second-instance', (_event, argv) => {
   if (argv.includes('--toggle')) toggleRecording()
+  if (argv.includes('--scratch')) undoLastDictation()
 })
 
 app.on('will-quit', () => {
