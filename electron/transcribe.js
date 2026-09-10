@@ -31,6 +31,13 @@ export async function transcribe(bytes, mimeType) {
   form.append('file', new Blob([bytes], { type: mimeType }), 'dictation.webm')
   form.append('model', MODEL)
   form.append('response_format', 'json')
+  form.append('temperature', '0')
+
+  // Pin the dictation language (ISO-639-1, e.g. "en", "is", "ur").
+  // Whisper's auto-detect hallucinates whole wrong languages on short or
+  // context-free speech (isolated numbers, single words). Unset = auto-detect.
+  const language = process.env.DICTATION_LANGUAGE
+  if (language) form.append('language', language)
 
   const response = await fetch(GROQ_TRANSCRIBE_URL, {
     method: 'POST',
