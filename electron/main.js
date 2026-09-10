@@ -1,8 +1,10 @@
-// NeuralAir main process — Phase 1, step 1.
-// Background-only app: no visible window. Tray icon + global hotkey come in later steps.
+// NeuralAir main process.
+// Background-only app: no visible window. Tray (step 2) + hotkey (step 3).
 import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createTray, setStatus } from './tray.js'
+import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -30,10 +32,22 @@ function createHiddenRenderer() {
 
 app.whenReady().then(() => {
   createHiddenRenderer()
+  createTray(() => app.quit())
+
+  const HOTKEY = 'Control+Space'
+  registerHotkey(HOTKEY, (recording) => {
+    setStatus(recording ? 'recording' : 'idle')
+    // Phase 1, step 4: start/stop MediaRecorder in the hidden renderer here.
+    console.log(recording ? '[recording] start' : '[recording] stop')
+  })
 
   // Keep running in the background when windows close — this is a tray app.
   // Subscribing (even as a no-op) overrides Electron's default quit-on-all-closed.
   app.on('window-all-closed', () => {})
+})
+
+app.on('will-quit', () => {
+  unregisterAllHotkeys()
 })
 
 // macOS: clicking the dock icon should not spawn a visible window.
