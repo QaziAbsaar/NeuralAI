@@ -1,6 +1,7 @@
 // NeuralAir main process.
-// Background-only app: no visible window. Tray (step 2) + hotkey (step 3).
-import { app, BrowserWindow } from 'electron'
+// Background-only app: no visible window. Tray (step 2) + hotkey (step 3)
+// + in-memory audio capture via hidden renderer (step 4).
+import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTray, setStatus } from './tray.js'
@@ -17,13 +18,14 @@ function loadRenderer(win) {
   }
 }
 
-// Hidden renderer window. Audio capture (MediaRecorder) will live here in Phase 1, step 4.
+// Hidden renderer window. Hosts the MediaRecorder-based audio capture.
 function createHiddenRenderer() {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   })
   loadRenderer(win)
@@ -31,14 +33,20 @@ function createHiddenRenderer() {
 }
 
 app.whenReady().then(() => {
-  createHiddenRenderer()
+  const hiddenWin = createHiddenRenderer()
   createTray(() => app.quit())
 
   const HOTKEY = 'Control+Space'
   registerHotkey(HOTKEY, (recording) => {
     setStatus(recording ? 'recording' : 'idle')
-    // Phase 1, step 4: start/stop MediaRecorder in the hidden renderer here.
-    console.log(recording ? '[recording] start' : '[recording] stop')
+    if (hiddenWin.isDestroyed()) return
+    hiddenWin.webContents.send(recording ? 'recorder:start' : 'recorder:stop')
+  })
+
+  // Audio arrives from the renderer as raw bytes — stays in memory only.
+  // Phase 1, step 5 forwards this buffer to the Groq Whisper API.
+  ipcMain.on('recorder:audio', (_event, bytes, mimeType) => {
+    console.log(`[recorder] captured ${bytes.byteLength} bytes (${mimeType}) in memory`)
   })
 
   // Keep running in the background when windows close — this is a tray app.
