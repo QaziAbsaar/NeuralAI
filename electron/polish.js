@@ -4,7 +4,8 @@
 // Engineering rule: never lose a dictation — any failure returns the raw
 // transcript untouched.
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MODEL = 'llama-3.1-8b-instant'
+// Groq's 2026 lineup: Llama models retired; gpt-oss-20b is the fast formatting pick.
+const MODEL = 'openai/gpt-oss-20b'
 
 function buildSystemPrompt(context) {
   const contextLine = context?.title
