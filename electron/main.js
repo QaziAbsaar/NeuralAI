@@ -13,6 +13,13 @@
 import { app, BrowserWindow, ipcMain, Notification } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+// Must be set before libuv's threadpool spins up (first async fs call): the
+// hold-key listener parks one blocking read per keyboard device on the pool,
+// and the default 4 threads starve — idle devices (power button etc.) hold
+// every thread, so the keyboard's follow-up reads never run.
+process.env.UV_THREADPOOL_SIZE ||= '32'
+
 import { createTray, setStatus } from './tray.js'
 import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 import { loadEnv, transcribe } from './transcribe.js'
@@ -20,6 +27,7 @@ import { getActiveWindowContext } from './context.js'
 import { polishTranscript } from './polish.js'
 import { injectText, backspaceChars, writeClipboard } from './inject.js'
 import { recordDictation, popDictation } from './history.js'
+import { startHoldKeyListener } from './holdkey.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -116,6 +124,22 @@ app.whenReady().then(() => {
   const HOTKEY = 'Control+Space'
   const ok = registerHotkey(HOTKEY, toggleRecording)
   console.log(`[main] hotkey ${HOTKEY} registered: ${ok}`)
+
+  // Hold-to-talk: watch a raw evdev keycode for press AND release — the one
+  // thing Wayland shortcuts cannot deliver. HOLD_KEYCODE is a Linux input
+  // code (e.g. 67 = F9, 87 = F11). While held, the key still reaches apps,
+  // so pick a key that types nothing (a function key, not a letter).
+  // Do NOT also bind this key in the desktop's shortcut settings — that
+  // would double-trigger with the toggle command.
+  const HOLD_KEYCODE = Number(process.env.HOLD_KEYCODE) || 0
+  if (HOLD_KEYCODE) {
+    const listening = startHoldKeyListener(
+      HOLD_KEYCODE,
+      () => startRecording('hold'),
+      () => stopRecording(),
+    )
+    console.log(`[main] hold key ${HOLD_KEYCODE} listener: ${listening ? 'active' : 'no /dev/input access'}`)
+  }
 
   // Diagnostic self-test: NEURALAIR_AUTOTEST=1 triggers a 3s recording after
   // load, bypassing the hotkey. Verifies the recorder pipeline independently
