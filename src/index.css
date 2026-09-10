@@ -1,0 +1,6 @@
+/* Minimal reset — the renderer is a hidden background window in Phase 1. */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}

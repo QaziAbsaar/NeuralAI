@@ -1,0 +1,49 @@
+{
+  "name": "neuralair",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Free, open-source, privacy-first voice dictation and AI transcription desktop app.",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "build": "tsc -b && vite build",
+    "start": "npm run build && electron .",
+    "toggle": "electron . --toggle",
+    "dist": "npm run build && electron-builder",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.0",
+    "electron-builder": "^26.0.12",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "com.neuralair.app",
+    "productName": "NeuralAir",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  }
+}
