@@ -17,6 +17,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "active-win": "^8.2.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
