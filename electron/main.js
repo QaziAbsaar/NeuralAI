@@ -10,12 +10,15 @@
 //      signals the running instance via 'second-instance' and exits. Bind this
 //      command to a key in the desktop's own shortcut settings (e.g. COSMIC
 //      Settings → Keyboard → Shortcuts), which is Wayland-native and reliable.
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTray, setStatus } from './tray.js'
 import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 import { loadEnv, transcribe } from './transcribe.js'
+import { getActiveWindowContext } from './context.js'
+import { polishTranscript } from './polish.js'
+import { injectText } from './inject.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -93,16 +96,32 @@ app.whenReady().then(() => {
     })
   }
 
-  // Audio arrives from the renderer as raw bytes — stays in memory only.
-  // Bytes go straight to Groq Whisper; transcript lands in the console (Phase 2
-  // adds active-win context, LLM polish, and injection).
+  // Full pipeline: audio bytes → transcript → window context → LLM polish →
+  // paste at cursor. Autotest mode stops before injection so automated runs
+  // don't paste into whatever happens to be focused.
   ipcMain.on('recorder:audio', async (_event, bytes, mimeType) => {
     console.log(`[recorder] captured ${bytes.byteLength} bytes (${mimeType}) in memory`)
     try {
-      const text = await transcribe(bytes, mimeType)
-      console.log(`[transcript] ${text}`)
+      const transcript = await transcribe(bytes, mimeType)
+      console.log(`[transcript] ${transcript}`)
+      if (!transcript.trim()) return
+
+      const context = await getActiveWindowContext()
+      console.log(`[context] ${context ? `${context.owner}: ${context.title}` : 'none (Wayland/COSMIC or unsupported)'}`)
+
+      const polished = await polishTranscript(transcript, context)
+      console.log(`[polished] ${polished}`)
+
+      if (process.env.NEURALAIR_AUTOTEST) {
+        console.log('[inject] skipped (autotest)')
+        return
+      }
+      const ok = await injectText(polished, (msg) => {
+        if (Notification.isSupported()) new Notification({ body: msg }).show()
+      })
+      console.log(`[inject] ${ok ? 'pasted' : 'failed — text left on clipboard'}`)
     } catch (err) {
-      console.error(`[transcribe] failed: ${err.message}`)
+      console.error(`[pipeline] failed: ${err.message}`)
     }
   })
 
