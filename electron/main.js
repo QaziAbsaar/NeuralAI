@@ -1,6 +1,7 @@
 // NeuralAir main process.
 // Background-only app: no visible window. Tray (step 2) + hotkey (step 3)
-// + in-memory audio capture via hidden renderer (step 4).
+// + in-memory audio capture via hidden renderer (step 4) + Groq Whisper
+// transcription (step 5).
 //
 // Hotkey strategy: Electron's globalShortcut uses X11 key grabs, which do not
 // deliver events on Wayland (COSMIC). So toggling works two ways:
@@ -14,6 +15,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTray, setStatus } from './tray.js'
 import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
+import { loadEnv, transcribe } from './transcribe.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -53,6 +55,7 @@ function createHiddenRenderer() {
 app.whenReady().then(() => {
   if (!gotInstanceLock) return // second instance exiting — do not initialize
 
+  loadEnv()
   console.log('[main] app ready')
   const hiddenWin = createHiddenRenderer()
 
@@ -91,9 +94,16 @@ app.whenReady().then(() => {
   }
 
   // Audio arrives from the renderer as raw bytes — stays in memory only.
-  // Phase 1, step 5 forwards this buffer to the Groq Whisper API.
-  ipcMain.on('recorder:audio', (_event, bytes, mimeType) => {
+  // Bytes go straight to Groq Whisper; transcript lands in the console (Phase 2
+  // adds active-win context, LLM polish, and injection).
+  ipcMain.on('recorder:audio', async (_event, bytes, mimeType) => {
     console.log(`[recorder] captured ${bytes.byteLength} bytes (${mimeType}) in memory`)
+    try {
+      const text = await transcribe(bytes, mimeType)
+      console.log(`[transcript] ${text}`)
+    } catch (err) {
+      console.error(`[transcribe] failed: ${err.message}`)
+    }
   })
 
   // Keep running in the background when windows close — this is a tray app.
