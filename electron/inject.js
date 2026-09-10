@@ -12,7 +12,12 @@ import { clipboard } from 'electron'
 import { keyboard, Key } from '@nut-tree-fork/nut-js'
 import { execFile } from 'node:child_process'
 
-const CLIPBOARD_RESTORE_DELAY_MS = 500
+// Restore delay: must exceed the slowest app's clipboard read after paste.
+// 500ms was too fast — some apps (and ydotool's uinput path) read the
+// clipboard after the restore already fired, pasting the user's OLD text
+// instead of the dictation. 2s keeps the dictation readable while still
+// restoring the user's clipboard shortly after.
+const CLIPBOARD_RESTORE_DELAY_MS = 2000
 
 keyboard.config.autoDelayMs = 10
 
