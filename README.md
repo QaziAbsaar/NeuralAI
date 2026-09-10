@@ -1,6 +1,6 @@
-<img src="Logo.png" alt="NeuralAir logo" align="left" width="96" />
-
-# NeuralAir
+<p align="center">
+  <img src="Logo.png" alt="NeuralAir logo" width="256" />
+</p>
 
 Free, open-source, privacy-first alternative to Wispr Flow. Voice dictation and AI transcription desktop app.
 
