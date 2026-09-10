@@ -71,14 +71,43 @@ app.whenReady().then(() => {
     console.log('[main] renderer loaded')
   })
 
-  let recording = false
-  toggleRecording = () => {
-    recording = !recording
-    console.log(`[main] toggle -> ${recording ? 'recording' : 'idle'}`)
-    setStatus(recording ? 'recording' : 'idle')
-    if (hiddenWin.isDestroyed()) return
-    hiddenWin.webContents.send(recording ? 'recorder:start' : 'recorder:stop')
+  // VAD auto-stop — active in toggle mode only. Hold mode stops on key
+  // release; cutting the user off mid-pause there would be wrong.
+  const VAD = {
+    threshold: Number(process.env.VAD_THRESHOLD) || 0.01,
+    silenceMs: Number(process.env.VAD_SILENCE_MS) || 1500,
+    minMs: 1200,
   }
+  const vadEnabled = process.env.NEURALAIR_NO_VAD !== '1'
+
+  let recording = false
+  const startRecording = (source) => {
+    if (recording) return
+    recording = true
+    console.log(`[main] ${source} -> recording`)
+    setStatus('recording')
+    if (hiddenWin.isDestroyed()) return
+    hiddenWin.webContents.send('recorder:start', {
+      source,
+      vad: { enabled: source === 'toggle' && vadEnabled, ...VAD },
+    })
+  }
+  const stopRecording = () => {
+    if (!recording) return
+    recording = false
+    console.log('[main] -> idle')
+    setStatus('idle')
+    if (hiddenWin.isDestroyed()) return
+    hiddenWin.webContents.send('recorder:stop')
+  }
+  toggleRecording = () => (recording ? stopRecording() : startRecording('toggle'))
+
+  // Renderer stopped itself (VAD silence) — sync state and tray icon.
+  ipcMain.on('recorder:auto-stopped', () => {
+    recording = false
+    setStatus('idle')
+    console.log('[main] auto-stopped (VAD) -> idle')
+  })
 
   createTray(() => app.quit(), toggleRecording)
 
