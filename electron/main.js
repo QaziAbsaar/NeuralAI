@@ -10,7 +10,8 @@
 //      signals the running instance via 'second-instance' and exits. Bind this
 //      command to a key in the desktop's own shortcut settings (e.g. COSMIC
 //      Settings → Keyboard → Shortcuts), which is Wayland-native and reliable.
-import { app, BrowserWindow, ipcMain, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,8 +27,10 @@ import { loadEnv, transcribe } from './transcribe.js'
 import { getActiveWindowContext } from './context.js'
 import { polishTranscript } from './polish.js'
 import { injectText, backspaceChars, writeClipboard } from './inject.js'
-import { recordDictation, popDictation } from './history.js'
+import { recordDictation, popDictation, listHistory } from './history.js'
 import { startHoldKeyListener } from './holdkey.js'
+import { loadSettings, saveSettings, settingsForRenderer, applyToEnv, listModels } from './settings.js'
+import { recordUsage, usageSummary } from './usage.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -65,10 +68,21 @@ function createHiddenRenderer() {
   return win
 }
 
+// Output transforms (Transforms view in the dashboard), applied after the
+// polish pass. 'title' leaves small words alone — sentence casing, not headlines.
+const TRANSFORMS = {
+  none: (t) => t,
+  upper: (t) => t.toUpperCase(),
+  lower: (t) => t.toLowerCase(),
+  title: (t) => t.replace(/\S+/g, (w) => (w.length <= 3 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase())),
+}
+
 app.whenReady().then(() => {
   if (!gotInstanceLock) return // second instance exiting — do not initialize
 
   loadEnv()
+  // Settings override the .env values (API key, language) once loaded.
+  applyToEnv()
   console.log('[main] app ready')
   const hiddenWin = createHiddenRenderer()
 
@@ -81,32 +95,38 @@ app.whenReady().then(() => {
     console.log('[main] renderer loaded')
   })
 
-  // VAD auto-stop — active in toggle mode only. Hold mode stops on key
-  // release; cutting the user off mid-pause there would be wrong.
-  const VAD = {
-    threshold: Number(process.env.VAD_THRESHOLD) || 0.01,
-    silenceMs: Number(process.env.VAD_SILENCE_MS) || 1500,
-    minMs: 1200,
-  }
-  const vadEnabled = process.env.NEURALAIR_NO_VAD !== '1'
-
   let recording = false
+  let recordingStartedAt = 0
+  let recordingDurationMs = 0 // captured at stop, spent when the audio arrives
+
   const startRecording = (source) => {
     if (recording) return
     recording = true
+    recordingStartedAt = Date.now()
     console.log(`[main] ${source} -> recording`)
     setStatus('recording')
+    broadcastStatus('recording')
     if (hiddenWin.isDestroyed()) return
+    // VAD auto-stop — active in toggle mode only. Hold mode stops on key
+    // release; cutting the user off mid-pause there would be wrong.
+    const { vad } = loadSettings()
     hiddenWin.webContents.send('recorder:start', {
       source,
-      vad: { enabled: source === 'toggle' && vadEnabled, ...VAD },
+      vad: {
+        enabled: source === 'toggle' && vad.enabled,
+        threshold: vad.threshold,
+        silenceMs: vad.silenceMs,
+        minMs: vad.minMs,
+      },
     })
   }
   const stopRecording = () => {
     if (!recording) return
     recording = false
+    recordingDurationMs = Date.now() - recordingStartedAt
     console.log('[main] -> idle')
     setStatus('idle')
+    broadcastStatus('idle')
     if (hiddenWin.isDestroyed()) return
     hiddenWin.webContents.send('recorder:stop')
   }
@@ -115,23 +135,95 @@ app.whenReady().then(() => {
   // Renderer stopped itself (VAD silence) — sync state and tray icon.
   ipcMain.on('recorder:auto-stopped', () => {
     recording = false
+    recordingDurationMs = Date.now() - recordingStartedAt
     setStatus('idle')
+    broadcastStatus('idle')
     console.log('[main] auto-stopped (VAD) -> idle')
   })
 
-  createTray(() => app.quit(), toggleRecording, undoLastDictation)
+  // Dashboard window (Phase 3) — the app's only visible UI: home with stats
+  // and the dictation activity feed, plus a settings view.
+  let settingsWin = null
+  function broadcastStatus(status) {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.webContents.send('status:changed', status)
+    }
+  }
+  function broadcastHistory() {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.webContents.send('history:changed')
+    }
+  }
+  function createSettingsWindow() {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.focus()
+      return
+    }
+    settingsWin = new BrowserWindow({
+      width: 1180,
+      height: 760,
+      minWidth: 960,
+      minHeight: 640,
+      show: true,
+      backgroundColor: '#dad7cd',
+      title: 'NeuralAir',
+      autoHideMenuBar: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: path.join(__dirname, 'preload.cjs'),
+      },
+    })
+    if (process.env.VITE_DEV_SERVER_URL) {
+      settingsWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?window=settings`)
+    } else {
+      settingsWin.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), {
+        query: { window: 'settings' },
+      })
+    }
+    settingsWin.on('closed', () => {
+      settingsWin = null
+    })
+  }
+
+  ipcMain.handle('settings:get', () => settingsForRenderer())
+  ipcMain.handle('settings:set', (_event, patch) => {
+    applyToEnv(saveSettings(patch))
+    return settingsForRenderer()
+  })
+  ipcMain.handle('usage:get', () => usageSummary())
+  // Model picker — live list of the account's available chat models.
+  ipcMain.handle('models:list', () => listModels())
+  // History feed — wl-clipboard-aware copy, same channel the pipeline uses.
+  ipcMain.handle('history:list', () => listHistory())
+  ipcMain.handle('history:copy', (_event, text) => {
+    writeClipboard(String(text)).catch(() => {})
+  })
+  // Dashboard actions: FAB mic + external links (https only).
+  ipcMain.on('ui:toggle', () => toggleRecording())
+  ipcMain.on('app:quit', () => app.quit())
+  ipcMain.on('open:external', (_event, url) => {
+    if (/^https:\/\//.test(String(url))) shell.openExternal(String(url))
+  })
+
+  // Test/diagnostic hook: open the settings window at startup
+  // (NEURALAIR_OPEN_SETTINGS=1) without clicking the tray.
+  if (process.env.NEURALAIR_OPEN_SETTINGS) createSettingsWindow()
+
+  createTray(() => app.quit(), toggleRecording, undoLastDictation, createSettingsWindow)
 
   const HOTKEY = 'Control+Space'
   const ok = registerHotkey(HOTKEY, toggleRecording)
   console.log(`[main] hotkey ${HOTKEY} registered: ${ok}`)
 
   // Hold-to-talk: watch a raw evdev keycode for press AND release — the one
-  // thing Wayland shortcuts cannot deliver. HOLD_KEYCODE is a Linux input
-  // code (e.g. 67 = F9, 87 = F11). While held, the key still reaches apps,
-  // so pick a key that types nothing (a function key, not a letter).
-  // Do NOT also bind this key in the desktop's shortcut settings — that
-  // would double-trigger with the toggle command.
-  const HOLD_KEYCODE = Number(process.env.HOLD_KEYCODE) || 0
+  // thing Wayland shortcuts cannot deliver. The keycode comes from settings
+  // (env HOLD_KEYCODE as legacy fallback), e.g. 67 = F9, 87 = F11. While
+  // held, the key still reaches apps, so pick a key that types nothing (a
+  // function key, not a letter). Do NOT also bind this key in the desktop's
+  // shortcut settings — that would double-trigger with the toggle command.
+  // Changing it in settings needs an app restart to re-arm the listener.
+  const HOLD_KEYCODE = Number(loadSettings().holdKeycode) || Number(process.env.HOLD_KEYCODE) || 0
   if (HOLD_KEYCODE) {
     const listening = startHoldKeyListener(
       HOLD_KEYCODE,
@@ -160,11 +252,19 @@ app.whenReady().then(() => {
       const transcript = await transcribe(bytes, mimeType)
       console.log(`[transcript] ${transcript}`)
       if (!transcript.trim()) return
+      const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length
+      recordUsage(recordingDurationMs / 1000, wordCount)
 
       const context = await getActiveWindowContext()
       console.log(`[context] ${context ? `${context.owner}: ${context.title}` : 'none (Wayland/COSMIC or unsupported)'}`)
 
-      const polished = await polishTranscript(transcript, context)
+      // 'exact' mode skips the LLM pass entirely — raw transcript only.
+      const { polishMode, vocabulary, transform } = loadSettings()
+      let polished =
+        polishMode === 'exact'
+          ? transcript
+          : await polishTranscript(transcript, context, vocabulary)
+      polished = (TRANSFORMS[transform] ?? TRANSFORMS.none)(polished)
       console.log(`[polished] ${polished}`)
 
       if (process.env.NEURALAIR_AUTOTEST) {
@@ -180,8 +280,11 @@ app.whenReady().then(() => {
           ts: Date.now(),
           transcript,
           polished,
+          wordCount,
+          audioSeconds: Math.round(recordingDurationMs / 1000),
           clipboardBefore: ok,
         })
+        broadcastHistory()
       }
     } catch (err) {
       console.error(`[pipeline] failed: ${err.message}`)

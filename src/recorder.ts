@@ -8,29 +8,6 @@
 // recording automatically — no second keypress needed. Hold mode keeps
 // recording until the key is released, so the main process disables VAD there.
 
-declare global {
-  interface Window {
-    neuralair: {
-      onRecorderStart: (callback: (config: RecorderConfig) => void) => void
-      onRecorderStop: (callback: () => void) => void
-      sendAudio: (bytes: Uint8Array, mimeType: string) => void
-      sendAutoStopped: () => void
-    }
-  }
-}
-
-interface VadConfig {
-  enabled: boolean
-  threshold: number
-  silenceMs: number
-  minMs: number
-}
-
-interface RecorderConfig {
-  source: 'toggle' | 'hold'
-  vad: VadConfig
-}
-
 const VAD_POLL_MS = 100
 
 let mediaRecorder: MediaRecorder | null = null
@@ -87,7 +64,7 @@ function startVad(micStream: MediaStream): void {
       console.log('[recorder] VAD: silence detected, auto-stopping')
       stopVad()
       stopRecording()
-      window.neuralair.sendAutoStopped()
+      window.neuralair!.sendAutoStopped()
     }
   }, VAD_POLL_MS)
 }
@@ -115,7 +92,7 @@ async function startRecording(config: RecorderConfig): Promise<void> {
   mediaRecorder.onstop = () => {
     const blob = new Blob(chunks, { type: mimeType })
     blob.arrayBuffer().then((buffer) => {
-      window.neuralair.sendAudio(new Uint8Array(buffer), mimeType)
+      window.neuralair!.sendAudio(new Uint8Array(buffer), mimeType)
     })
     // Release the mic immediately — never hold it open between dictations.
     stopVad()
@@ -139,6 +116,6 @@ function stopRecording(): void {
 }
 
 export function initRecorder(): void {
-  window.neuralair.onRecorderStart((config) => void startRecording(config))
-  window.neuralair.onRecorderStop(() => stopRecording())
+  window.neuralair!.onRecorderStart((config) => void startRecording(config))
+  window.neuralair!.onRecorderStop(() => stopRecording())
 }
