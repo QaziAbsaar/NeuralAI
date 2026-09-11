@@ -26,8 +26,9 @@ import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 import { loadEnv, transcribe } from './transcribe.js'
 import { getActiveWindowContext } from './context.js'
 import { polishTranscript } from './polish.js'
-import { injectText, backspaceChars, writeClipboard } from './inject.js'
+import { injectText, backspaceChars, writeClipboard, pressEnter } from './inject.js'
 import { recordDictation, popDictation, listHistory } from './history.js'
+import { parseVoiceCommands, segmentsToText } from './voicecommands.js'
 import { startHoldKeyListener } from './holdkey.js'
 import { loadSettings, saveSettings, settingsForRenderer, applyToEnv, listModels } from './settings.js'
 import { recordUsage, usageSummary } from './usage.js'
@@ -66,6 +67,32 @@ function createHiddenRenderer() {
   })
   loadRenderer(win)
   return win
+}
+
+// Whisper stock-phrase hallucinations: on very short clips the model can
+// emit these instead of what was said. Below this duration they are treated
+// as "nothing was transcribed".
+const HALLUCINATION_MS = 1500
+const HALLUCINATIONS = new Set([
+  'thank you.',
+  'thank you',
+  'thank you for watching!',
+  'thanks for watching!',
+  'thank you for watching.',
+  'okay.',
+  'okay',
+  'you',
+  'bye.',
+  'bye bye.',
+  'bye',
+  'hmm.',
+  'mm-hmm.',
+  'amnesia.',
+  'please subscribe!',
+])
+
+function isHallucination(transcript, durationMs) {
+  return durationMs < HALLUCINATION_MS && HALLUCINATIONS.has(transcript.trim().toLowerCase())
 }
 
 // Output transforms (Transforms view in the dashboard), applied after the
@@ -252,18 +279,48 @@ app.whenReady().then(() => {
       const transcript = await transcribe(bytes, mimeType)
       console.log(`[transcript] ${transcript}`)
       if (!transcript.trim()) return
+      if (isHallucination(transcript, recordingDurationMs)) {
+        console.log('[pipeline] short-clip hallucination discarded, nothing typed')
+        return
+      }
       const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length
       recordUsage(recordingDurationMs / 1000, wordCount)
+
+      // Voice commands (Phase 4) — parsed out before the LLM sees anything,
+      // so command phrases are never typed literally.
+      const parsed = parseVoiceCommands(transcript)
+      if (parsed.undoOnly) {
+        console.log('[commands] scratch that -> undoing previous dictation')
+        await undoLastDictation()
+        return
+      }
+      if (!parsed.hasText) {
+        if (parsed.send) {
+          console.log('[commands] send -> Enter')
+          if (!process.env.NEURALAIR_AUTOTEST) await pressEnter()
+        } else {
+          console.log('[commands] command-only utterance, nothing to type')
+        }
+        return
+      }
 
       const context = await getActiveWindowContext()
       console.log(`[context] ${context ? `${context.owner}: ${context.title}` : 'none (Wayland/COSMIC or unsupported)'}`)
 
       // 'exact' mode skips the LLM pass entirely — raw transcript only.
+      // In 'polished' mode each text segment is polished independently and
+      // rejoined around paragraph breaks, so "\n\n" survives the LLM.
       const { polishMode, vocabulary, transform } = loadSettings()
-      let polished =
-        polishMode === 'exact'
-          ? transcript
-          : await polishTranscript(transcript, context, vocabulary)
+      const textSegments = parsed.segments.filter((s) => s.text)
+      let polished
+      if (polishMode === 'exact') {
+        polished = segmentsToText(parsed.segments)
+      } else {
+        const polishedParts = await Promise.all(
+          textSegments.map((s) => polishTranscript(s.text, context, vocabulary).catch(() => s.text)),
+        )
+        polished = polishedParts.join('\n\n')
+      }
       polished = (TRANSFORMS[transform] ?? TRANSFORMS.none)(polished)
       console.log(`[polished] ${polished}`)
 
@@ -276,6 +333,7 @@ app.whenReady().then(() => {
       })
       console.log(`[inject] ${ok === false ? 'failed — text left on clipboard' : 'pasted'}`)
       if (ok !== false) {
+        if (parsed.send) await pressEnter()
         recordDictation({
           ts: Date.now(),
           transcript,

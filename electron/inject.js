@@ -106,6 +106,20 @@ export async function injectText(text, notify) {
   return savedClipboard
 }
 
+// "Send" voice command — one Enter after the pasted text. KEY_ENTER = 28.
+export async function pressEnter() {
+  if (isWayland) {
+    if ((await run('ydotool', ['key', '28:1', '28:0'])) !== null) return true
+  }
+  try {
+    await keyboard.pressKey(Key.Enter)
+    await keyboard.releaseKey(Key.Enter)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // "Scratch that" support — delete the last n characters before the cursor.
 // KEY_BACKSPACE = 14 on Linux.
 export async function backspaceChars(n) {
