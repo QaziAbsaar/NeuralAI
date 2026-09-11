@@ -962,7 +962,9 @@ code:focus-visible {
    dot breathes in and out; two staggered rings expand from it so the pulse
    reads as "live" from across the room. */
 
-body:has(.indicator) {
+html:has(.indicator),
+body:has(.indicator),
+#root:has(.indicator) {
   background: transparent;
   overflow: hidden;
 }

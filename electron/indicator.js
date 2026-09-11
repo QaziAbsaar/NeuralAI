@@ -39,6 +39,10 @@ export function showIndicator() {
     y,
     frame: false,
     transparent: true,
+    // Fully transparent ARGB background — without this the compositor paints
+    // the window's default background (the accent-colored box) behind the dot.
+    backgroundColor: '#00000000',
+    roundedCorners: false,
     hasShadow: false,
     resizable: false,
     movable: false,
