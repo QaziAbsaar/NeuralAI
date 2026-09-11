@@ -17,6 +17,7 @@ export default function SettingsView({
 }) {
   const [draft, setDraft] = useState<RendererSettings>(settings)
   const [apiKeyInput, setApiKeyInput] = useState('')
+  const [llmKeyInput, setLlmKeyInput] = useState('')
   const [vocabDraft, setVocabDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -37,10 +38,16 @@ export default function SettingsView({
         vocabulary: draft.vocabulary,
         holdKeycode: draft.holdKeycode,
         vad: draft.vad,
+        sttProvider: draft.sttProvider,
+        llmProvider: draft.llmProvider,
+        llmBaseUrl: draft.llmBaseUrl.trim(),
+        llmModel: draft.llmModel.trim(),
         ...(apiKeyInput.trim() ? { groqApiKey: apiKeyInput.trim() } : {}),
+        ...(llmKeyInput.trim() ? { llmApiKey: llmKeyInput.trim() } : {}),
       })
       setDraft(next)
       setApiKeyInput('')
+      setLlmKeyInput('')
       setSaved(true)
       onSaved()
     } catch (e) {
@@ -85,6 +92,106 @@ export default function SettingsView({
             ? 'Stored encrypted with your system keychain.'
             : 'Stored encrypted with your system keychain, never in plain text.'}
         </p>
+      </section>
+
+      <section className="card">
+        <h2>Providers</h2>
+
+        <div className="field">
+          <span>Transcription</span>
+          <div className="segmented" role="radiogroup">
+            <button
+              type="button"
+              className={draft.sttProvider === 'auto' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'auto' })}
+            >
+              Auto
+            </button>
+            <button
+              type="button"
+              className={draft.sttProvider === 'groq' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'groq' })}
+            >
+              Groq
+            </button>
+            <button
+              type="button"
+              className={draft.sttProvider === 'local' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'local' })}
+            >
+              Local
+            </button>
+          </div>
+          <span className="hint">
+            Auto uses Groq and falls back to a local whisper.cpp install when it is down or slow. Local runs
+            fully offline.
+          </span>
+        </div>
+
+        <div className="field">
+          <span>Text formatting</span>
+          <div className="segmented" role="radiogroup">
+            <button
+              type="button"
+              className={draft.llmProvider === 'groq' ? 'active' : ''}
+              onClick={() => patch({ llmProvider: 'groq' })}
+            >
+              Groq
+            </button>
+            <button
+              type="button"
+              className={draft.llmProvider === 'openai-compatible' ? 'active' : ''}
+              onClick={() => patch({ llmProvider: 'openai-compatible' })}
+            >
+              OpenAI-compatible
+            </button>
+            <button
+              type="button"
+              className={draft.llmProvider === 'none' ? 'active' : ''}
+              onClick={() => patch({ llmProvider: 'none' })}
+            >
+              None
+            </button>
+          </div>
+          <span className="hint">
+            None skips the polish pass — raw transcript only, works with a fully local pipeline.
+          </span>
+        </div>
+
+        {draft.llmProvider === 'openai-compatible' && (
+          <>
+            <label className="field">
+              <span>Base URL</span>
+              <input
+                className="input"
+                value={draft.llmBaseUrl}
+                placeholder="http://localhost:1234/v1"
+                onChange={(e) => patch({ llmBaseUrl: e.target.value })}
+              />
+              <span className="hint">Any endpoint that serves /chat/completions — OpenAI, OpenRouter, LM Studio, Ollama.</span>
+            </label>
+            <label className="field">
+              <span>Model</span>
+              <input
+                className="input"
+                value={draft.llmModel}
+                placeholder="llama3.1"
+                onChange={(e) => patch({ llmModel: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>API key</span>
+              <input
+                type="password"
+                className="input"
+                value={llmKeyInput}
+                placeholder={draft.hasLlmKey ? 'Saved — enter a new key to replace it' : 'sk-… (often optional for local servers)'}
+                onChange={(e) => setLlmKeyInput(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+          </>
+        )}
       </section>
 
       <section className="card">

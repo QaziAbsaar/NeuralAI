@@ -19,6 +19,10 @@ interface RendererSettings {
   language: string
   polishModel: string
   polishMode: 'polished' | 'exact'
+  sttProvider: 'auto' | 'groq' | 'local'
+  llmProvider: 'groq' | 'openai-compatible' | 'none'
+  llmBaseUrl: string
+  llmModel: string
   transform: 'none' | 'upper' | 'lower' | 'title'
   snippets: { id: number; name: string; text: string }[]
   scratchpad: string
@@ -27,6 +31,7 @@ interface RendererSettings {
   vad: VadConfig
   hasApiKey: boolean
   apiKeySource: 'settings' | 'env' | 'none'
+  hasLlmKey: boolean
 }
 
 interface UsageDay {
@@ -68,7 +73,7 @@ interface Window {
     sendAudio: (bytes: Uint8Array, mimeType: string) => void
     // Settings window
     getSettings: () => Promise<RendererSettings>
-    saveSettings: (patch: Partial<RendererSettings & { groqApiKey: string }>) => Promise<RendererSettings>
+    saveSettings: (patch: Partial<RendererSettings & { groqApiKey: string; llmApiKey: string }>) => Promise<RendererSettings>
     getUsage: () => Promise<UsageSummary>
     listModels: () => Promise<string[]>
     onStatusChanged: (callback: (status: string) => void) => void

@@ -20,6 +20,23 @@ const DEFAULTS = {
   holdKeycode: 0,
   // Groq model for the text-polish LLM pass.
   polishModel: 'openai/gpt-oss-20b',
+  // LLM polish provider (Phase 4): 'groq' (default), 'openai-compatible'
+  // (any OpenAI-style endpoint — OpenAI, OpenRouter, LM Studio, Ollama), or
+  // 'none' (raw transcript only, fully offline pipeline).
+  llmProvider: 'groq',
+  // OpenAI-compatible endpoint config. Base URL points at the API root that
+  // serves /chat/completions (e.g. http://localhost:1234/v1).
+  llmBaseUrl: '',
+  // Stored encrypted, same as the Groq key.
+  llmApiKey: '',
+  llmModel: '',
+  // Speech-to-text provider: 'auto' (Groq, fail over to local whisper.cpp),
+  // 'groq', or 'local' (whisper.cpp only, offline).
+  sttProvider: 'auto',
+  // Optional explicit paths; default is NeuralAir's install layout under
+  // ~/.local/share/neuralair/whisper.cpp/.
+  whisperCppPath: '',
+  whisperModelPath: '',
   // Output transform applied after polish: none | upper | lower | title.
   transform: 'none',
   // Saved snippets: [{ id, name, text }] — click in the dashboard to copy.
@@ -72,8 +89,13 @@ export function loadSettings() {
       vocabulary: Array.isArray(raw.vocabulary) ? raw.vocabulary : [],
       snippets: Array.isArray(raw.snippets) ? raw.snippets : [],
       transform: ['none', 'upper', 'lower', 'title'].includes(raw.transform) ? raw.transform : 'none',
+      llmProvider: ['groq', 'openai-compatible', 'none'].includes(raw.llmProvider) ? raw.llmProvider : 'groq',
       scratchpad: typeof raw.scratchpad === 'string' ? raw.scratchpad : '',
     }
+    // Decrypt the stored keys for in-process use (they are saved back as
+    // encrypted blobs; the plaintext only ever lives in this cache).
+    cached.groqApiKey = decodeKey(raw._groqApiKeyStored)
+    cached.llmApiKey = decodeKey(raw._llmApiKeyStored)
   } catch {
     cached = { ...DEFAULTS, vad: { ...DEFAULTS.vad } }
   }
@@ -95,9 +117,21 @@ export function saveSettings(patch) {
   } else if (current._groqApiKeyStored) {
     next._groqApiKeyStored = current._groqApiKeyStored
   }
+  // Same treatment for the OpenAI-compatible endpoint key.
+  if (patch.llmApiKey !== undefined) {
+    next._llmApiKeyStored = encodeKey(patch.llmApiKey)
+    next.llmApiKey = ''
+  } else if (current._llmApiKeyStored) {
+    next._llmApiKeyStored = current._llmApiKeyStored
+  }
   delete next.groqApiKey
+  delete next.llmApiKey
   fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2))
-  cached = { ...next, groqApiKey: decodeKey(next._groqApiKeyStored) }
+  cached = {
+    ...next,
+    groqApiKey: decodeKey(next._groqApiKeyStored),
+    llmApiKey: decodeKey(next._llmApiKeyStored),
+  }
   return cached
 }
 
@@ -150,6 +184,12 @@ export function settingsForRenderer() {
     userName,
     language: s.language,
     polishModel: s.polishModel,
+    llmProvider: s.llmProvider,
+    llmBaseUrl: s.llmBaseUrl,
+    llmModel: s.llmModel,
+    sttProvider: s.sttProvider,
+    whisperCppPath: s.whisperCppPath,
+    whisperModelPath: s.whisperModelPath,
     transform: s.transform,
     snippets: s.snippets,
     scratchpad: s.scratchpad,
@@ -159,5 +199,6 @@ export function settingsForRenderer() {
     vad: s.vad,
     hasApiKey: Boolean(s.groqApiKey || process.env.GROQ_API_KEY),
     apiKeySource: s.groqApiKey ? 'settings' : process.env.GROQ_API_KEY ? 'env' : 'none',
+    hasLlmKey: Boolean(s.llmApiKey),
   }
 }
