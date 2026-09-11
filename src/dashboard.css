@@ -956,3 +956,75 @@ code:focus-visible {
     right: 36px;
   }
 }
+
+/* ---------- Recording indicator window (Phase 4) ---------- */
+/* Tiny transparent always-on-top window, bottom-right of the screen. A sage
+   dot breathes in and out; two staggered rings expand from it so the pulse
+   reads as "live" from across the room. */
+
+body:has(.indicator) {
+  background: transparent;
+  overflow: hidden;
+}
+
+.indicator {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.indicator-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--sage);
+  box-shadow: 0 0 10px 2px rgba(163, 177, 138, 0.55);
+  animation: indicator-breathe 1.8s ease-in-out infinite;
+}
+
+.indicator-ring {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--sage);
+  animation: indicator-ping 1.8s ease-out infinite;
+}
+
+.indicator-ring-late {
+  animation-delay: 0.9s;
+}
+
+@keyframes indicator-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.35);
+  }
+}
+
+@keyframes indicator-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  70%,
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator-dot,
+  .indicator-ring {
+    animation: none;
+  }
+
+  .indicator-dot {
+    opacity: 0.85;
+  }
+}

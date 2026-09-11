@@ -30,6 +30,7 @@ import { injectText, backspaceChars, writeClipboard, pressEnter } from './inject
 import { recordDictation, popDictation, listHistory } from './history.js'
 import { parseVoiceCommands, segmentsToText } from './voicecommands.js'
 import { startHoldKeyListener } from './holdkey.js'
+import { showIndicator, hideIndicator } from './indicator.js'
 import { loadSettings, saveSettings, settingsForRenderer, applyToEnv, listModels } from './settings.js'
 import { recordUsage, usageSummary } from './usage.js'
 
@@ -133,6 +134,7 @@ app.whenReady().then(() => {
     console.log(`[main] ${source} -> recording`)
     setStatus('recording')
     broadcastStatus('recording')
+    showIndicator()
     if (hiddenWin.isDestroyed()) return
     // VAD auto-stop — active in toggle mode only. Hold mode stops on key
     // release; cutting the user off mid-pause there would be wrong.
@@ -154,6 +156,7 @@ app.whenReady().then(() => {
     console.log('[main] -> idle')
     setStatus('idle')
     broadcastStatus('idle')
+    hideIndicator()
     if (hiddenWin.isDestroyed()) return
     hiddenWin.webContents.send('recorder:stop')
   }
@@ -165,6 +168,7 @@ app.whenReady().then(() => {
     recordingDurationMs = Date.now() - recordingStartedAt
     setStatus('idle')
     broadcastStatus('idle')
+    hideIndicator()
     console.log('[main] auto-stopped (VAD) -> idle')
   })
 
