@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- NeuralAir app icon: dark forest rounded square, sage microphone. -->
+  <rect width="512" height="512" rx="112" fill="#3a5a40"/>
+  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="#588157" stroke-width="10" opacity="0.55"/>
+  <rect x="216" y="104" width="80" height="152" rx="40" fill="#a3b18a"/>
+  <path d="M144 240a112 112 0 0 0 224 0" fill="none" stroke="#a3b18a" stroke-width="28" stroke-linecap="round"/>
+  <path d="M256 352v64" stroke="#a3b18a" stroke-width="28" stroke-linecap="round"/>
+  <path d="M204 416h104" stroke="#a3b18a" stroke-width="28" stroke-linecap="round"/>
+</svg>

@@ -22,9 +22,21 @@ Hold a global hotkey → speak → release → audio is transcribed with Whisper
 - **Toggle mode** with **VAD auto-stop**: tap the key, speak, stop talking — silence ends the recording (~1.5s).
 - **Hold-to-talk**: hold a key while speaking, release to stop.
 - **"Scratch that"**: undo the last dictation (backspaces it out, restores your clipboard).
-- Dictation history (last 50, in memory).
+- Dictation history (last 100), persisted across restarts.
 - Recording status in the tray.
 - Works on X11 and Wayland.
+
+## Settings window
+
+Open **Settings** from the tray icon. The window has three parts:
+
+- **Sidebar** — words-today counter, the model picker (lists every chat model available on your Groq account; the chosen one runs the polish pass), and navigation.
+- **Main feed** — your dictation history grouped by day, with copy buttons, and a floating mic button to start/stop a dictation without touching a hotkey.
+- **Status card** — agent status, words/wpm/day-streak stats, voice-profile progress.
+
+Other views, all wired to real settings: **Insights** (words per day), **Dictionary** (custom vocabulary fed to the polish prompt), **Snippets** (click-to-copy text blocks), **Style** (AI polished vs exact transcription), **Transforms** (output casing), **Scratchpad** (autosaved free text).
+
+The Groq API key can be stored in the settings window — encrypted at rest with your OS keychain (`safeStorage`), overriding `.env`.
 
 ## Setup
 
@@ -78,8 +90,12 @@ It backspaces out the last injected text and restores the clipboard that was the
 ## Build
 
 ```bash
-npm run dist
+npm run dist:linux   # AppImage + .deb
+npm run dist:win     # NSIS installer — requires wine on Linux
+npm run dist:mac     # .dmg — must run on macOS
 ```
+
+Packages land in `release/`.
 
 ## License
 
