@@ -4,9 +4,9 @@
 
 Free, open-source, privacy-first alternative to Wispr Flow. Voice dictation and AI transcription desktop app.
 
-- **Zero weekly limits** — Bring-Your-Own-Key model (Groq API).
+- **Zero weekly limits** — Bring-Your-Own-Key model (Groq API, or any OpenAI-compatible endpoint).
 - **Privacy-first** — No screen recording, no telemetry, audio never touches disk.
-- **Offline-ready (planned)** — Local `whisper.cpp` fallback.
+- **Offline-ready** — Local `whisper.cpp` transcription with automatic failover, and an optional no-cloud mode for the full pipeline.
 
 ## Core Loop
 
@@ -22,6 +22,9 @@ Hold a global hotkey → speak → release → audio is transcribed with Whisper
 - **Toggle mode** with **VAD auto-stop**: tap the key, speak, stop talking — silence ends the recording (~1.5s).
 - **Hold-to-talk**: hold a key while speaking, release to stop.
 - **"Scratch that"**: undo the last dictation (backspaces it out, restores your clipboard).
+- **Voice commands**: say "new paragraph", "scratch that" or "send" — parsed out before the AI pass, never typed as literal text.
+- **Local transcription**: `whisper.cpp` offline fallback with auto-failover when Groq is down or slow.
+- **Multi-provider BYOK**: transcription (Groq / local) and formatting (Groq / any OpenAI-compatible endpoint / none) are independently configurable.
 - Dictation history (last 100), persisted across restarts.
 - Recording status in the tray.
 - Works on X11 and Wayland.
@@ -37,6 +40,30 @@ Open **Settings** from the tray icon. The window has three parts:
 Other views, all wired to real settings: **Insights** (words per day), **Dictionary** (custom vocabulary fed to the polish prompt), **Snippets** (click-to-copy text blocks), **Style** (AI polished vs exact transcription), **Transforms** (output casing), **Scratchpad** (autosaved free text).
 
 The Groq API key can be stored in the settings window — encrypted at rest with your OS keychain (`safeStorage`), overriding `.env`.
+
+### Providers
+
+In **Settings → Providers**:
+
+- **Transcription** — `Auto` (Groq first, local whisper.cpp when it is down or slow), `Groq` only, or `Local` (fully offline).
+- **Text formatting** — `Groq`, any `OpenAI-compatible` endpoint (OpenAI, OpenRouter, LM Studio, Ollama — needs base URL, model and optional key), or `None` for raw transcripts. `Local` + `None` gives a completely offline pipeline.
+
+To enable local transcription, run the setup script once (builds whisper.cpp and downloads a model into `~/.local/share/neuralair/`):
+
+```bash
+bash scripts/setup-whisper.sh          # base.en (~148 MB) — good default
+bash scripts/setup-whisper.sh small.en # better accuracy, slower
+```
+
+### Voice commands
+
+Parsed out of the transcript before any formatting, so they are never typed as text:
+
+| Say | Effect |
+|---|---|
+| "new paragraph" | paragraph break at that spot |
+| "scratch that" | alone: undoes the previous dictation; mid-dictation: discards what you said before it |
+| "send" | presses Enter after the text lands (only when spoken last) |
 
 ## Setup
 
