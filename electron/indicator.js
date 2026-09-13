@@ -1,6 +1,6 @@
 // NeuralAir recording indicator — Phase 4 polish.
 // A tiny frameless, transparent, always-on-top window pinned to the
-// bottom-right corner of the screen while dictation is active. The renderer
+// top-center of the screen while dictation is active. The renderer
 // inside it (`?window=indicator`) draws a pulsing sage dot; this module only
 // owns the window and its placement.
 import { BrowserWindow, screen } from 'electron'
@@ -14,24 +14,24 @@ const MARGIN = 24 // distance from the screen corner
 
 let indicatorWin = null
 
-// Bottom-right of the primary display's work area, so it never sits under
-// a dock/taskbar.
-function cornerPosition() {
+// Top-center of the primary display's work area — visible from anywhere
+// without covering content low on the screen.
+function topCenterPosition() {
   const { workArea } = screen.getPrimaryDisplay()
   return {
-    x: workArea.x + workArea.width - SIZE - MARGIN,
-    y: workArea.y + workArea.height - SIZE - MARGIN,
+    x: workArea.x + Math.round((workArea.width - SIZE) / 2),
+    y: workArea.y + MARGIN,
   }
 }
 
 export function showIndicator() {
   if (indicatorWin && !indicatorWin.isDestroyed()) {
-    const { x, y } = cornerPosition()
+    const { x, y } = topCenterPosition()
     indicatorWin.setPosition(x, y)
     indicatorWin.showInactive()
     return
   }
-  const { x, y } = cornerPosition()
+  const { x, y } = topCenterPosition()
   indicatorWin = new BrowserWindow({
     width: SIZE,
     height: SIZE,
