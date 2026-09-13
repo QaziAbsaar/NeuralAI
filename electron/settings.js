@@ -20,14 +20,18 @@ const DEFAULTS = {
   holdKeycode: 0,
   // Groq model for the text-polish LLM pass.
   polishModel: 'openai/gpt-oss-20b',
-  // LLM polish provider (Phase 4): 'groq' (default), 'openai-compatible'
-  // (any OpenAI-style endpoint — OpenAI, OpenRouter, LM Studio, Ollama), or
-  // 'none' (raw transcript only, fully offline pipeline).
+  // LLM polish provider (Phase 4): 'groq' (default), 'nvidia' (NVIDIA NIM,
+  // OpenAI-compatible), 'openai-compatible' (any custom OpenAI-style
+  // endpoint — OpenAI, OpenRouter, LM Studio, Ollama), or 'none' (raw
+  // transcript only, fully offline pipeline).
   llmProvider: 'groq',
-  // OpenAI-compatible endpoint config. Base URL points at the API root that
-  // serves /chat/completions (e.g. http://localhost:1234/v1).
+  // Custom endpoint config. Base URL points at the API root that serves
+  // /chat/completions (e.g. http://localhost:1234/v1). The 'nvidia' preset
+  // fixes this to the NIM endpoint, so the field only matters for
+  // 'openai-compatible'.
   llmBaseUrl: '',
-  // Stored encrypted, same as the Groq key.
+  // Stored encrypted, same as the Groq key. Shared by the custom and NVIDIA
+  // providers.
   llmApiKey: '',
   llmModel: '',
   // Speech-to-text provider: 'auto' (Groq, fail over to local whisper.cpp),
@@ -89,7 +93,7 @@ export function loadSettings() {
       vocabulary: Array.isArray(raw.vocabulary) ? raw.vocabulary : [],
       snippets: Array.isArray(raw.snippets) ? raw.snippets : [],
       transform: ['none', 'upper', 'lower', 'title'].includes(raw.transform) ? raw.transform : 'none',
-      llmProvider: ['groq', 'openai-compatible', 'none'].includes(raw.llmProvider) ? raw.llmProvider : 'groq',
+      llmProvider: ['groq', 'nvidia', 'openai-compatible', 'none'].includes(raw.llmProvider) ? raw.llmProvider : 'groq',
       scratchpad: typeof raw.scratchpad === 'string' ? raw.scratchpad : '',
     }
     // Decrypt the stored keys for in-process use (they are saved back as

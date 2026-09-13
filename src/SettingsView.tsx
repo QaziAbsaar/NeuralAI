@@ -140,10 +140,17 @@ export default function SettingsView({
             </button>
             <button
               type="button"
+              className={draft.llmProvider === 'nvidia' ? 'active' : ''}
+              onClick={() => patch({ llmProvider: 'nvidia' })}
+            >
+              NVIDIA NIM
+            </button>
+            <button
+              type="button"
               className={draft.llmProvider === 'openai-compatible' ? 'active' : ''}
               onClick={() => patch({ llmProvider: 'openai-compatible' })}
             >
-              OpenAI-compatible
+              Custom
             </button>
             <button
               type="button"
@@ -154,9 +161,37 @@ export default function SettingsView({
             </button>
           </div>
           <span className="hint">
-            None skips the polish pass — raw transcript only, works with a fully local pipeline.
+            Custom takes any OpenAI-compatible endpoint (OpenAI, OpenRouter, LM Studio, Ollama). None skips
+            the polish pass — works with a fully local pipeline.
           </span>
         </div>
+
+        {draft.llmProvider === 'nvidia' && (
+          <>
+            <label className="field">
+              <span>Model</span>
+              <input
+                className="input"
+                value={draft.llmModel}
+                placeholder="meta/llama-3.1-70b-instruct"
+                onChange={(e) => patch({ llmModel: e.target.value })}
+              />
+              <span className="hint">Model names from build.nvidia.com, including the owner prefix.</span>
+            </label>
+            <label className="field">
+              <span>NVIDIA API key</span>
+              <input
+                type="password"
+                className="input"
+                value={llmKeyInput}
+                placeholder={draft.hasLlmKey ? 'Saved — enter a new key to replace it' : 'nvapi-…'}
+                onChange={(e) => setLlmKeyInput(e.target.value)}
+                autoComplete="off"
+              />
+              <span className="hint">Create one at build.nvidia.com. Stored encrypted with your system keychain.</span>
+            </label>
+          </>
+        )}
 
         {draft.llmProvider === 'openai-compatible' && (
           <>
@@ -168,7 +203,7 @@ export default function SettingsView({
                 placeholder="http://localhost:1234/v1"
                 onChange={(e) => patch({ llmBaseUrl: e.target.value })}
               />
-              <span className="hint">Any endpoint that serves /chat/completions — OpenAI, OpenRouter, LM Studio, Ollama.</span>
+              <span className="hint">The API root that serves /chat/completions.</span>
             </label>
             <label className="field">
               <span>Model</span>

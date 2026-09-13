@@ -20,7 +20,7 @@ interface RendererSettings {
   polishModel: string
   polishMode: 'polished' | 'exact'
   sttProvider: 'auto' | 'groq' | 'local'
-  llmProvider: 'groq' | 'openai-compatible' | 'none'
+  llmProvider: 'groq' | 'nvidia' | 'openai-compatible' | 'none'
   llmBaseUrl: string
   llmModel: string
   transform: 'none' | 'upper' | 'lower' | 'title'

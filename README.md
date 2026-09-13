@@ -46,7 +46,7 @@ The Groq API key can be stored in the settings window — encrypted at rest with
 In **Settings → Providers**:
 
 - **Transcription** — `Auto` (Groq first, local whisper.cpp when it is down or slow), `Groq` only, or `Local` (fully offline).
-- **Text formatting** — `Groq`, any `OpenAI-compatible` endpoint (OpenAI, OpenRouter, LM Studio, Ollama — needs base URL, model and optional key), or `None` for raw transcripts. `Local` + `None` gives a completely offline pipeline.
+- **Text formatting** — `Groq`, `NVIDIA NIM` (key + model from build.nvidia.com), `Custom` (any OpenAI-compatible endpoint — OpenAI, OpenRouter, LM Studio, Ollama — with base URL, model and optional key), or `None` for raw transcripts. `Local` + `None` gives a completely offline pipeline.
 
 To enable local transcription, run the setup script once (builds whisper.cpp and downloads a model into `~/.local/share/neuralair/`):
 

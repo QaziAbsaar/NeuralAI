@@ -1,13 +1,14 @@
 // NeuralAir LLM polish — Phase 2, step 2; multi-provider in Phase 4.
 // Formats the transcript for the target application using the active window
-// as context. Providers (settings.llmProvider): 'groq' (default) or
-// 'openai-compatible' — any OpenAI-style /chat/completions endpoint
-// (OpenAI, OpenRouter, LM Studio, Ollama) — or 'none' for a fully offline
-// pipeline. Engineering rule: never lose a dictation — any failure returns
-// the raw transcript untouched.
+// as context. Providers (settings.llmProvider): 'groq' (default), 'nvidia'
+// (NVIDIA NIM), 'openai-compatible' — any custom OpenAI-style
+// /chat/completions endpoint (OpenAI, OpenRouter, LM Studio, Ollama) — or
+// 'none' for a fully offline pipeline. Engineering rule: never lose a
+// dictation — any failure returns the raw transcript untouched.
 import { loadSettings } from './settings.js'
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
+const NVIDIA_CHAT_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 
 function buildSystemPrompt(context, vocabulary) {
   const contextLine = context?.title
@@ -38,13 +39,23 @@ export async function polishTranscript(text, context, vocabulary = []) {
   if (provider === 'none') return text // offline pipeline — raw transcript
 
   let url, apiKey, model
-  if (provider === 'openai-compatible') {
+  if (provider === 'nvidia') {
+    // NVIDIA NIM — OpenAI-compatible; user brings the key and model name
+    // (e.g. "meta/llama-3.1-70b-instruct" from build.nvidia.com).
+    url = NVIDIA_CHAT_URL
+    apiKey = settings.llmApiKey
+    model = settings.llmModel
+    if (!model) {
+      console.error('[polish] nvidia provider needs a model name — using raw transcript')
+      return text
+    }
+  } else if (provider === 'openai-compatible') {
     // Base URL points at the API root serving /chat/completions.
     url = `${settings.llmBaseUrl.replace(/\/+$/, '')}/chat/completions`
     apiKey = settings.llmApiKey
     model = settings.llmModel
     if (!settings.llmBaseUrl || !model) {
-      console.error('[polish] openai-compatible provider needs a base URL and model — using raw transcript')
+      console.error('[polish] custom provider needs a base URL and model — using raw transcript')
       return text
     }
   } else {
