@@ -35,8 +35,18 @@ const DEFAULTS = {
   llmApiKey: '',
   llmModel: '',
   // Speech-to-text provider: 'auto' (Groq, fail over to local whisper.cpp),
-  // 'groq', or 'local' (whisper.cpp only, offline).
+  // 'groq', 'openai', 'deepgram', 'assemblyai', 'elevenlabs', or 'local'
+  // (whisper.cpp only, offline).
   sttProvider: 'auto',
+  // STT model name for the providers that offer a choice. Empty = the
+  // provider's default (see DEFAULT_STT_MODELS in transcribe.js).
+  sttModel: '',
+  // Per-provider STT API keys — stored encrypted like the Groq key, so a
+  // user can configure several and switch without re-entering them.
+  openaiSttKey: '',
+  deepgramSttKey: '',
+  assemblyaiSttKey: '',
+  elevenlabsSttKey: '',
   // Optional explicit paths; default is NeuralAir's install layout under
   // ~/.local/share/neuralair/whisper.cpp/.
   whisperCppPath: '',
@@ -94,12 +104,17 @@ export function loadSettings() {
       snippets: Array.isArray(raw.snippets) ? raw.snippets : [],
       transform: ['none', 'upper', 'lower', 'title'].includes(raw.transform) ? raw.transform : 'none',
       llmProvider: ['groq', 'nvidia', 'openai-compatible', 'none'].includes(raw.llmProvider) ? raw.llmProvider : 'groq',
+      sttProvider: ['auto', 'groq', 'openai', 'deepgram', 'assemblyai', 'elevenlabs', 'local'].includes(raw.sttProvider) ? raw.sttProvider : 'auto',
       scratchpad: typeof raw.scratchpad === 'string' ? raw.scratchpad : '',
     }
     // Decrypt the stored keys for in-process use (they are saved back as
     // encrypted blobs; the plaintext only ever lives in this cache).
     cached.groqApiKey = decodeKey(raw._groqApiKeyStored)
     cached.llmApiKey = decodeKey(raw._llmApiKeyStored)
+    cached.openaiSttKey = decodeKey(raw._openaiSttKeyStored)
+    cached.deepgramSttKey = decodeKey(raw._deepgramSttKeyStored)
+    cached.assemblyaiSttKey = decodeKey(raw._assemblyaiSttKeyStored)
+    cached.elevenlabsSttKey = decodeKey(raw._elevenlabsSttKeyStored)
   } catch {
     cached = { ...DEFAULTS, vad: { ...DEFAULTS.vad } }
   }
@@ -128,6 +143,17 @@ export function saveSettings(patch) {
   } else if (current._llmApiKeyStored) {
     next._llmApiKeyStored = current._llmApiKeyStored
   }
+  // And the per-provider STT keys.
+  for (const field of ['openaiSttKey', 'deepgramSttKey', 'assemblyaiSttKey', 'elevenlabsSttKey']) {
+    const stored = `_${field}Stored`
+    if (patch[field] !== undefined) {
+      next[stored] = encodeKey(patch[field])
+      next[field] = ''
+    } else if (current[stored]) {
+      next[stored] = current[stored]
+    }
+    delete next[field]
+  }
   delete next.groqApiKey
   delete next.llmApiKey
   fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2))
@@ -135,6 +161,10 @@ export function saveSettings(patch) {
     ...next,
     groqApiKey: decodeKey(next._groqApiKeyStored),
     llmApiKey: decodeKey(next._llmApiKeyStored),
+    openaiSttKey: decodeKey(next._openaiSttKeyStored),
+    deepgramSttKey: decodeKey(next._deepgramSttKeyStored),
+    assemblyaiSttKey: decodeKey(next._assemblyaiSttKeyStored),
+    elevenlabsSttKey: decodeKey(next._elevenlabsSttKeyStored),
   }
   return cached
 }
@@ -192,8 +222,13 @@ export function settingsForRenderer() {
     llmBaseUrl: s.llmBaseUrl,
     llmModel: s.llmModel,
     sttProvider: s.sttProvider,
+    sttModel: s.sttModel,
     whisperCppPath: s.whisperCppPath,
     whisperModelPath: s.whisperModelPath,
+    hasOpenaiSttKey: Boolean(s.openaiSttKey),
+    hasDeepgramSttKey: Boolean(s.deepgramSttKey),
+    hasAssemblyaiSttKey: Boolean(s.assemblyaiSttKey),
+    hasElevenlabsSttKey: Boolean(s.elevenlabsSttKey),
     transform: s.transform,
     snippets: s.snippets,
     scratchpad: s.scratchpad,

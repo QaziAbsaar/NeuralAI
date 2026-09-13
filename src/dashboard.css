@@ -823,6 +823,7 @@ code:focus-visible {
 
 .segmented {
   display: flex;
+  flex-wrap: wrap; /* 7 providers must fold, not overflow the card */
   border: 1px solid var(--sage);
   border-radius: 6px;
   overflow: hidden;
@@ -839,6 +840,9 @@ code:focus-visible {
   cursor: pointer;
 }
 
+/* Wrap seams: only draw the divider between buttons in the same row-ish
+   flow — wrapped rows keep a left border that reads as a grid, which is
+   fine, but the top row's last button must not bleed into row two. */
 .segmented button + button {
   border-left: 1px solid var(--sage);
 }

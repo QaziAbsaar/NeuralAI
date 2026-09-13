@@ -18,6 +18,7 @@ export default function SettingsView({
   const [draft, setDraft] = useState<RendererSettings>(settings)
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [llmKeyInput, setLlmKeyInput] = useState('')
+  const [sttKeyInput, setSttKeyInput] = useState('')
   const [vocabDraft, setVocabDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -39,6 +40,11 @@ export default function SettingsView({
         holdKeycode: draft.holdKeycode,
         vad: draft.vad,
         sttProvider: draft.sttProvider,
+        sttModel: draft.sttModel.trim(),
+        ...(sttKeyInput.trim() &&
+          ['openai', 'deepgram', 'assemblyai', 'elevenlabs'].includes(draft.sttProvider) && {
+            [`${draft.sttProvider}SttKey`]: sttKeyInput.trim(),
+          }),
         llmProvider: draft.llmProvider,
         llmBaseUrl: draft.llmBaseUrl.trim(),
         llmModel: draft.llmModel.trim(),
@@ -48,6 +54,7 @@ export default function SettingsView({
       setDraft(next)
       setApiKeyInput('')
       setLlmKeyInput('')
+      setSttKeyInput('')
       setSaved(true)
       onSaved()
     } catch (e) {
@@ -116,6 +123,34 @@ export default function SettingsView({
             </button>
             <button
               type="button"
+              className={draft.sttProvider === 'openai' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'openai' })}
+            >
+              OpenAI
+            </button>
+            <button
+              type="button"
+              className={draft.sttProvider === 'deepgram' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'deepgram' })}
+            >
+              Deepgram
+            </button>
+            <button
+              type="button"
+              className={draft.sttProvider === 'assemblyai' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'assemblyai' })}
+            >
+              AssemblyAI
+            </button>
+            <button
+              type="button"
+              className={draft.sttProvider === 'elevenlabs' ? 'active' : ''}
+              onClick={() => patch({ sttProvider: 'elevenlabs' })}
+            >
+              ElevenLabs
+            </button>
+            <button
+              type="button"
               className={draft.sttProvider === 'local' ? 'active' : ''}
               onClick={() => patch({ sttProvider: 'local' })}
             >
@@ -123,10 +158,61 @@ export default function SettingsView({
             </button>
           </div>
           <span className="hint">
-            Auto uses Groq and falls back to a local whisper.cpp install when it is down or slow. Local runs
-            fully offline.
+            Auto uses Groq and falls back to a local whisper.cpp install when it is down or slow. Every other
+            choice pins that provider. Local runs fully offline.
           </span>
         </div>
+
+        {['openai', 'deepgram', 'assemblyai', 'elevenlabs'].includes(draft.sttProvider) && (
+          <>
+            <label className="field">
+              <span>Model (optional)</span>
+              <input
+                className="input"
+                value={draft.sttModel}
+                placeholder={
+                  draft.sttProvider === 'openai'
+                    ? 'gpt-4o-mini-transcribe (default) — or gpt-4o-transcribe'
+                    : draft.sttProvider === 'deepgram'
+                      ? 'nova-3 (default) — or nova-2'
+                      : draft.sttProvider === 'assemblyai'
+                        ? 'universal-2 (default) — or universal-3-5-pro'
+                        : 'scribe_v1 (default)'
+                }
+                onChange={(e) => patch({ sttModel: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>
+                {draft.sttProvider === 'openai'
+                  ? 'OpenAI API key'
+                  : draft.sttProvider === 'deepgram'
+                    ? 'Deepgram API key'
+                    : draft.sttProvider === 'assemblyai'
+                      ? 'AssemblyAI API key'
+                      : 'ElevenLabs API key'}
+              </span>
+              <input
+                type="password"
+                className="input"
+                value={sttKeyInput}
+                placeholder={
+                  ({
+                    openai: draft.hasOpenaiSttKey,
+                    deepgram: draft.hasDeepgramSttKey,
+                    assemblyai: draft.hasAssemblyaiSttKey,
+                    elevenlabs: draft.hasElevenlabsSttKey,
+                  }[draft.sttProvider as 'openai'])
+                    ? 'Saved — enter a new key to replace it'
+                    : 'sk-… / key from the provider console'
+                }
+                onChange={(e) => setSttKeyInput(e.target.value)}
+                autoComplete="off"
+              />
+              <span className="hint">Stored encrypted with your system keychain.</span>
+            </label>
+          </>
+        )}
 
         <div className="field">
           <span>Text formatting</span>

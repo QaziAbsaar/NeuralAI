@@ -19,7 +19,12 @@ interface RendererSettings {
   language: string
   polishModel: string
   polishMode: 'polished' | 'exact'
-  sttProvider: 'auto' | 'groq' | 'local'
+  sttProvider: 'auto' | 'groq' | 'openai' | 'deepgram' | 'assemblyai' | 'elevenlabs' | 'local'
+  sttModel: string
+  hasOpenaiSttKey: boolean
+  hasDeepgramSttKey: boolean
+  hasAssemblyaiSttKey: boolean
+  hasElevenlabsSttKey: boolean
   llmProvider: 'groq' | 'nvidia' | 'openai-compatible' | 'none'
   llmBaseUrl: string
   llmModel: string
@@ -73,7 +78,18 @@ interface Window {
     sendAudio: (bytes: Uint8Array, mimeType: string) => void
     // Settings window
     getSettings: () => Promise<RendererSettings>
-    saveSettings: (patch: Partial<RendererSettings & { groqApiKey: string; llmApiKey: string }>) => Promise<RendererSettings>
+    saveSettings: (
+      patch: Partial<
+        RendererSettings & {
+          groqApiKey: string
+          llmApiKey: string
+          openaiSttKey: string
+          deepgramSttKey: string
+          assemblyaiSttKey: string
+          elevenlabsSttKey: string
+        }
+      >,
+    ) => Promise<RendererSettings>
     getUsage: () => Promise<UsageSummary>
     listModels: () => Promise<string[]>
     onStatusChanged: (callback: (status: string) => void) => void

@@ -1,11 +1,24 @@
 // NeuralAir transcription — Phase 1, step 5; provider layer in Phase 4.
-// Provider-agnostic STT: Groq Whisper (cloud, default) and whisper.cpp
-// (local, no key, offline). The active provider comes from settings
-// ('auto' tries Groq first and fails over to local when it is down or slow).
+// Provider-agnostic STT. Cloud: Groq Whisper (default), OpenAI
+// (gpt-4o-transcribe family), Deepgram Nova-3, AssemblyAI Universal, and
+// ElevenLabs Scribe — all BYOK. Local: whisper.cpp (no key, offline). The
+// active provider comes from settings ('auto' tries Groq first and fails
+// over to local when it is down or slow; every other value pins one).
 const GROQ_TRANSCRIBE_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
+const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions'
+const DEEPGRAM_TRANSCRIBE_URL = 'https://api.deepgram.com/v1/listen'
+const ASSEMBLYAI_TRANSCRIBE_URL = 'https://api.assemblyai.com/v2/transcript'
+const ELEVENLABS_TRANSCRIBE_URL = 'https://api.elevenlabs.io/v1/speech-to-text'
 const GROQ_MODEL = 'whisper-large-v3-turbo'
-// How long 'auto' mode waits on Groq before failing over to local.
-const GROQ_TIMEOUT_MS = 12000
+// How long a cloud request waits before 'auto' mode fails over to local.
+const CLOUD_TIMEOUT_MS = 12000
+// Default STT models for providers with a choice; settings.sttModel overrides.
+const DEFAULT_STT_MODELS = {
+  openai: 'gpt-4o-mini-transcribe',
+  deepgram: 'nova-3',
+  assemblyai: 'universal-2',
+  elevenlabs: 'scribe_v1',
+}
 // Prime Whisper with dictation context: on short, context-free clips the
 // model otherwise hallucinates stock phrases ("Thank you.", "Thanks for
 // watching!") instead of transcribing what was actually said.
@@ -32,8 +45,8 @@ export function loadEnv() {
   }
 }
 
-// Which provider a request should use. 'local' is explicit; 'auto' means
-// Groq with failover; 'groq' is Groq only.
+// Which provider a request should use. 'auto' = Groq with local failover;
+// anything else pins one provider; default 'auto'.
 function providerChoice() {
   return loadSettings().sttProvider || 'auto'
 }
@@ -65,11 +78,147 @@ async function transcribeGroq(bytes, mimeType, apiKey) {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
-    signal: AbortSignal.timeout(GROQ_TIMEOUT_MS),
+    signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
   })
 
   if (!response.ok) {
     throw new Error(`Groq API ${response.status}: ${await response.text()}`)
+  }
+
+  const data = await response.json()
+  return data.text
+}
+
+// OpenAI's audio API is the same shape Groq re-implements, so this is nearly
+// a copy of transcribeGroq with a different URL, model list, and key. The
+// prompt hint and language pin carry over verbatim.
+async function transcribeOpenai(bytes, mimeType, apiKey, model) {
+  const form = new FormData()
+  form.append('file', new Blob([bytes], { type: mimeType }), 'dictation.webm')
+  form.append('model', model)
+  form.append('response_format', 'json')
+  form.append('prompt', PROMPT_HINT)
+
+  const language = process.env.DICTATION_LANGUAGE
+  if (language) form.append('language', language)
+
+  const response = await fetch(OPENAI_TRANSCRIBE_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+  })
+
+  if (!response.ok) {
+    throw new Error(`OpenAI API ${response.status}: ${await response.text()}`)
+  }
+
+  const data = await response.json()
+  return data.text
+}
+
+// Deepgram takes the raw audio bytes as the request body with everything
+// else as query params. `punctuate` and `smart_format` give dictation-ready
+// casing and punctuation before any LLM pass.
+async function transcribeDeepgram(bytes, mimeType, apiKey, model) {
+  const params = new URLSearchParams({
+    model,
+    smart_format: 'true',
+    punctuate: 'true',
+  })
+  const language = process.env.DICTATION_LANGUAGE
+  if (language) params.set('language', language)
+
+  const response = await fetch(`${DEEPGRAM_TRANSCRIBE_URL}?${params}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Token ${apiKey}`,
+      'Content-Type': mimeType,
+    },
+    body: bytes,
+    signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Deepgram API ${response.status}: ${await response.text()}`)
+  }
+
+  const data = await response.json()
+  // The batch response shape is results.channels[0].alternatives[0].transcript.
+  return data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ''
+}
+
+// AssemblyAI is async: upload, poll until the transcript is ready. A short
+// dictation usually completes in one or two polls.
+async function transcribeAssemblyai(bytes, mimeType, apiKey, model) {
+  const upload = await fetch('https://api.assemblyai.com/v2/upload', {
+    method: 'POST',
+    headers: {
+      Authorization: apiKey,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: bytes,
+    signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+  })
+  if (!upload.ok) {
+    throw new Error(`AssemblyAI upload ${upload.status}: ${await upload.text()}`)
+  }
+  const { upload_url: uploadUrl } = await upload.json()
+
+  const create = await fetch(ASSEMBLYAI_TRANSCRIBE_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      audio_url: uploadUrl,
+      speech_model: model,
+      language_code: process.env.DICTATION_LANGUAGE || 'en',
+    }),
+    signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+  })
+  if (!create.ok) {
+    throw new Error(`AssemblyAI create ${create.status}: ${await create.text()}`)
+  }
+  const { id } = await create.json()
+
+  // Poll for the result — queued → processing → completed/error.
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const poll = await fetch(`${ASSEMBLYAI_TRANSCRIBE_URL}/${id}`, {
+      headers: { Authorization: apiKey },
+      signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+    })
+    if (!poll.ok) {
+      throw new Error(`AssemblyAI poll ${poll.status}: ${await poll.text()}`)
+    }
+    const data = await poll.json()
+    if (data.status === 'completed') return data.text ?? ''
+    if (data.status === 'error') throw new Error(`AssemblyAI job failed: ${data.error ?? 'unknown'}`)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error('AssemblyAI transcription timed out')
+}
+
+// ElevenLabs Scribe: multipart upload, speech_to_text endpoint. The
+// language tag can be forced; `diarize` is pointless for single-speaker
+// dictation so it stays off.
+async function transcribeElevenlabs(bytes, mimeType, apiKey, model) {
+  const form = new FormData()
+  form.append('file', new Blob([bytes], { type: mimeType }), 'dictation.webm')
+  form.append('model_id', model)
+  const language = process.env.DICTATION_LANGUAGE
+  if (language) form.append('language_code', language)
+
+  const response = await fetch(ELEVENLABS_TRANSCRIBE_URL, {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey },
+    body: form,
+    signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS),
+  })
+
+  if (!response.ok) {
+    throw new Error(`ElevenLabs API ${response.status}: ${await response.text()}`)
   }
 
   const data = await response.json()
@@ -110,21 +259,50 @@ async function transcribeWhisperCpp(bytes, mimeType) {
   })
 }
 
+// One pinned cloud provider, selected by name. Throws if its key is missing
+// so the caller can surface a clear error (pinned means pinned — no silent
+// failover to a different provider the user did not choose).
+async function transcribeCloud(provider, bytes, mimeType) {
+  const s = loadSettings()
+  const model = s.sttModel || DEFAULT_STT_MODELS[provider] || ''
+  switch (provider) {
+    case 'groq': {
+      const apiKey = process.env.GROQ_API_KEY
+      if (!apiKey) throw new Error('GROQ_API_KEY not set (put it in .env or settings)')
+      return transcribeGroq(bytes, mimeType, apiKey)
+    }
+    case 'openai': {
+      if (!s.openaiSttKey) throw new Error('OpenAI STT key not set (Settings → Providers)')
+      return transcribeOpenai(bytes, mimeType, s.openaiSttKey, model)
+    }
+    case 'deepgram': {
+      if (!s.deepgramSttKey) throw new Error('Deepgram STT key not set (Settings → Providers)')
+      return transcribeDeepgram(bytes, mimeType, s.deepgramSttKey, model)
+    }
+    case 'assemblyai': {
+      if (!s.assemblyaiSttKey) throw new Error('AssemblyAI STT key not set (Settings → Providers)')
+      return transcribeAssemblyai(bytes, mimeType, s.assemblyaiSttKey, model)
+    }
+    case 'elevenlabs': {
+      if (!s.elevenlabsSttKey) throw new Error('ElevenLabs STT key not set (Settings → Providers)')
+      return transcribeElevenlabs(bytes, mimeType, s.elevenlabsSttKey, model)
+    }
+    default:
+      throw new Error(`Unknown STT provider: ${provider}`)
+  }
+}
+
 export async function transcribe(bytes, mimeType) {
   const provider = providerChoice()
-  const apiKey = process.env.GROQ_API_KEY
 
   if (provider === 'local') return transcribeWhisperCpp(bytes, mimeType)
-  if (provider === 'groq') {
-    if (!apiKey) throw new Error('GROQ_API_KEY not set (put it in .env or settings)')
-    return transcribeGroq(bytes, mimeType, apiKey)
-  }
+  if (provider !== 'auto') return transcribeCloud(provider, bytes, mimeType)
 
   // 'auto': Groq first, whisper.cpp failover. A missing key skips straight
   // to local — the dictation still works offline.
-  if (apiKey) {
+  if (process.env.GROQ_API_KEY) {
     try {
-      return await transcribeGroq(bytes, mimeType, apiKey)
+      return await transcribeCloud('groq', bytes, mimeType)
     } catch (err) {
       console.error(`[transcribe] Groq failed (${err.message}), trying whisper.cpp`)
     }
