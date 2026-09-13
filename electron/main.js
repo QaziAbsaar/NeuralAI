@@ -21,6 +21,17 @@ import { fileURLToPath } from 'node:url'
 // every thread, so the keyboard's follow-up reads never run.
 process.env.UV_THREADPOOL_SIZE ||= '32'
 
+// Run under the native Wayland backend when one is present (Electron 39).
+// The app is already Wayland-adapted (wl-clipboard, ydotool, evdev hold key,
+// `--toggle` CLI), and X11 windows on themed compositors like COSMIC get an
+// accent-colored box painted behind "transparent" ones — the recording
+// indicator needs a real Wayland surface to be truly see-through.
+// ozone-platform-hint=auto falls back to X11 off Wayland, so other
+// desktops/platforms are unaffected.
+if (process.env.WAYLAND_DISPLAY) {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
+}
+
 import { createTray, setStatus } from './tray.js'
 import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 import { loadEnv, transcribe } from './transcribe.js'
