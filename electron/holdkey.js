@@ -66,6 +66,11 @@ export function startHoldKeyListener(keycode, onPress, onRelease) {
 
 // One read loop per device fd. Blocks a threadpool thread between events,
 // which is fine — the pool has several and each device is mostly idle.
+// Shift presses (42 = left, 54 = right) are tracked so the hold key can be
+// modified: Shift+holdkey = raw dictation (no LLM pass). The shift state is
+// shared across devices — any keyboard's shift affects the next press.
+let shiftHeld = false
+
 function watchDevice(fd, keycode, onPress, onRelease) {
   const buf = Buffer.alloc(EVENT_SIZE)
   const readNext = () => {
@@ -82,10 +87,14 @@ function watchDevice(fd, keycode, onPress, onRelease) {
       const type = buf.readUInt16LE(16)
       const code = buf.readUInt16LE(18)
       const value = buf.readInt32LE(20)
-      if (type === EV_KEY && code === keycode) {
-        if (value === 1) onPress()
-        else if (value === 0) onRelease()
-        // value 2 = auto-repeat while held — ignored
+      if (type === EV_KEY) {
+        if (code === 42 || code === 54) {
+          shiftHeld = value !== 0
+        } else if (code === keycode) {
+          if (value === 1) onPress(shiftHeld)
+          else if (value === 0) onRelease()
+          // value 2 = auto-repeat while held — ignored
+        }
       }
       readNext()
     })

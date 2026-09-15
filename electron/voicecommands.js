@@ -96,3 +96,17 @@ export function segmentsToText(segments) {
   }
   return parts.join('').trim()
 }
+
+// Spoken snippet macros: "insert meeting template" (or just "meeting
+// template", or "paste meeting template") inserts that snippet's text
+// verbatim instead of the transcription. Returns the matched snippet or
+// null. Matching is on the whole utterance, post command parsing — a
+// snippet name inside a longer sentence is deliberately NOT expanded.
+const SNIPPET_PREFIX_RE = /^(?:insert|paste|use|expand)\s+/i
+
+export function matchSnippet(text, snippets) {
+  if (!text || !snippets?.length) return null
+  const spoken = text.replace(SNIPPET_PREFIX_RE, '').trim().toLowerCase()
+  if (!spoken) return null
+  return snippets.find((s) => s.name.trim().toLowerCase() === spoken) ?? null
+}

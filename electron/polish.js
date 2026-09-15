@@ -19,9 +19,21 @@ function buildSystemPrompt(context, vocabulary) {
       ? `The speaker's vocabulary (names and jargon — use these exact spellings when they appear): ${vocabulary.join(', ')}.`
       : ''
 
+  // Per-app shaping: developers dictating into an editor or terminal get
+  // verbatim-ish cleanup (flags, paths, and identifiers must survive); chat
+  // and mail get normal conversational formatting.
+  const where = `${context?.owner ?? ''} ${context?.title ?? ''}`.toLowerCase()
+  const isDevSurface = /code|vim|neovim|emacs|jetbrains|terminal|kitty|alacritty|foot|konsole|ghostty|shell|ssh|ssh-context|git|docker|ide|editor/.test(
+    where,
+  )
+  const styleLine = isDevSurface
+    ? 'The target app is a code editor or terminal: keep identifiers, paths, flags, and symbols exactly as spoken; do not add sentence-case or smart punctuation that would break code or CLI syntax.'
+    : 'Format naturally for the target application.'
+
   return [
     'You are a text formatter for dictated speech.',
     contextLine,
+    styleLine,
     vocabLine,
     'Fix punctuation and capitalization, remove filler words (um, uh, like, you know) and false starts.',
     'Preserve the speaker\'s meaning and language exactly — never add, summarize, or translate content.',

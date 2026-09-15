@@ -39,7 +39,7 @@ import { getActiveWindowContext } from './context.js'
 import { polishTranscript } from './polish.js'
 import { injectText, backspaceChars, writeClipboard, pressEnter } from './inject.js'
 import { recordDictation, popDictation, listHistory } from './history.js'
-import { parseVoiceCommands, segmentsToText } from './voicecommands.js'
+import { parseVoiceCommands, segmentsToText, matchSnippet } from './voicecommands.js'
 import { startHoldKeyListener } from './holdkey.js'
 import { showIndicator, hideIndicator } from './indicator.js'
 import { loadSettings, saveSettings, settingsForRenderer, applyToEnv, listModels } from './settings.js'
@@ -137,12 +137,14 @@ app.whenReady().then(() => {
   let recording = false
   let recordingStartedAt = 0
   let recordingDurationMs = 0 // captured at stop, spent when the audio arrives
+  let rawRecording = false // one-off exact mode for THIS dictation (Shift+hotkey / --toggle-raw)
 
-  const startRecording = (source) => {
+  const startRecording = (source, raw = false) => {
     if (recording) return
     recording = true
+    rawRecording = raw
     recordingStartedAt = Date.now()
-    console.log(`[main] ${source} -> recording`)
+    console.log(`[main] ${source} -> recording${raw ? ' (raw)' : ''}`)
     setStatus('recording')
     broadcastStatus('recording')
     showIndicator()
@@ -171,7 +173,7 @@ app.whenReady().then(() => {
     if (hiddenWin.isDestroyed()) return
     hiddenWin.webContents.send('recorder:stop')
   }
-  toggleRecording = () => (recording ? stopRecording() : startRecording('toggle'))
+  toggleRecording = (raw = false) => (recording ? stopRecording() : startRecording('toggle', raw))
 
   // Renderer stopped itself (VAD silence) — sync state and tray icon.
   ipcMain.on('recorder:auto-stopped', () => {
@@ -269,7 +271,7 @@ app.whenReady().then(() => {
   if (HOLD_KEYCODE) {
     const listening = startHoldKeyListener(
       HOLD_KEYCODE,
-      () => startRecording('hold'),
+      (shiftHeld) => startRecording('hold', shiftHeld), // Shift+hold = raw dictation
       () => stopRecording(),
     )
     console.log(`[main] hold key ${HOLD_KEYCODE} listener: ${listening ? 'active' : 'no /dev/input access'}`)
@@ -283,6 +285,29 @@ app.whenReady().then(() => {
       setTimeout(toggleRecording, 1000)
       setTimeout(toggleRecording, 4000)
     })
+  }
+
+  // Insert a saved snippet: inject verbatim (no LLM pass — the text is
+  // authored, not dictated), record it in history like any dictation.
+  const injectSnippet = async (snippet) => {
+    if (process.env.NEURALAIR_AUTOTEST) {
+      console.log(`[snippet] skipped (autotest): ${snippet.text.slice(0, 40)}…`)
+      return
+    }
+    const ok = await injectText(snippet.text, (msg) => {
+      if (Notification.isSupported()) new Notification({ body: msg }).show()
+    })
+    if (ok !== false) {
+      recordDictation({
+        ts: Date.now(),
+        transcript: `[snippet: ${snippet.name}]`,
+        polished: snippet.text,
+        wordCount: snippet.text.trim().split(/\s+/).filter(Boolean).length,
+        audioSeconds: 0,
+        clipboardBefore: ok,
+      })
+      broadcastHistory()
+    }
   }
 
   // Full pipeline: audio bytes → transcript → window context → LLM polish →
@@ -322,14 +347,27 @@ app.whenReady().then(() => {
       const context = await getActiveWindowContext()
       console.log(`[context] ${context ? `${context.owner}: ${context.title}` : 'none (Wayland/COSMIC or unsupported)'}`)
 
+      // Spoken snippet macros — "insert meeting template" inserts the saved
+      // snippet verbatim: no LLM, no transform, the text as authored.
+      const settings = loadSettings()
+      const spoken = segmentsToText(parsed.segments)
+      const snippet = matchSnippet(spoken, settings.snippets)
+      if (snippet) {
+        console.log(`[commands] snippet -> ${snippet.name}`)
+        await injectSnippet(snippet)
+        return
+      }
+
       // 'exact' mode skips the LLM pass entirely — raw transcript only.
-      // In 'polished' mode each text segment is polished independently and
-      // rejoined around paragraph breaks, so "\n\n" survives the LLM.
-      const { polishMode, vocabulary, transform } = loadSettings()
+      // Raw mode (Shift+hotkey / --toggle-raw) forces exact for this one
+      // dictation regardless of the setting.
+      const { polishMode, vocabulary, transform } = settings
+      const effectiveMode = rawRecording ? 'exact' : polishMode
+      rawRecording = false
       const textSegments = parsed.segments.filter((s) => s.text)
       let polished
-      if (polishMode === 'exact') {
-        polished = segmentsToText(parsed.segments)
+      if (effectiveMode === 'exact') {
+        polished = spoken
       } else {
         const polishedParts = await Promise.all(
           textSegments.map((s) => polishTranscript(s.text, context, vocabulary).catch(() => s.text)),
@@ -389,9 +427,12 @@ app.whenReady().then(() => {
   app.on('window-all-closed', () => {})
 })
 
-// Second instance launched with --toggle / --scratch: act in the live instance.
+// Second instance launched with --toggle / --toggle-raw / --scratch: act in
+// the live instance. --toggle-raw records this one dictation in exact mode
+// (no LLM pass) — for flags, paths, and code where cleanup hurts.
 app.on('second-instance', (_event, argv) => {
-  if (argv.includes('--toggle')) toggleRecording()
+  if (argv.includes('--toggle')) toggleRecording(false)
+  if (argv.includes('--toggle-raw')) toggleRecording(true)
   if (argv.includes('--scratch')) undoLastDictation()
 })
 
