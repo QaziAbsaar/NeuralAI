@@ -45,10 +45,35 @@ function buildSystemPrompt(context, vocabulary) {
 }
 
 export async function polishTranscript(text, context, vocabulary = []) {
+  try {
+    return await chatComplete(buildSystemPrompt(context, vocabulary), text)
+  } catch (err) {
+    console.error(`[polish] failed, using raw transcript: ${err.message}`)
+    return text
+  }
+}
+
+// Selection transforms ("--ask" flow): the user selected text, spoke an
+// instruction like "make this more concise", and the LLM rewrites the
+// selection accordingly. The result REPLACES the still-selected text.
+export async function transformSelection(selection, instruction) {
+  const systemPrompt = [
+    'You are a text editor. The user selected some text and gave you a spoken instruction.',
+    'Rewrite the SELECTED TEXT according to the INSTRUCTION.',
+    'Output ONLY the rewritten text. No preamble, no quotes, no explanations.',
+  ].join(' ')
+  const userContent = `INSTRUCTION: ${instruction}\n\nSELECTED TEXT:\n${selection}`
+  const result = await chatComplete(systemPrompt, userContent)
+  return result.trim() || selection
+}
+
+// One chat completion through the configured provider (groq / nvidia /
+// openai-compatible). Shared by the polish pass and selection transforms.
+async function chatComplete(systemPrompt, userContent) {
   const settings = loadSettings()
   const provider = settings.llmProvider
 
-  if (provider === 'none') return text // offline pipeline — raw transcript
+  if (provider === 'none') throw new Error('no LLM provider configured')
 
   let url, apiKey, model
   if (provider === 'nvidia') {
@@ -57,53 +82,41 @@ export async function polishTranscript(text, context, vocabulary = []) {
     url = NVIDIA_CHAT_URL
     apiKey = settings.llmApiKey
     model = settings.llmModel
-    if (!model) {
-      console.error('[polish] nvidia provider needs a model name — using raw transcript')
-      return text
-    }
+    if (!model) throw new Error('nvidia provider needs a model name')
   } else if (provider === 'openai-compatible') {
     // Base URL points at the API root serving /chat/completions.
     url = `${settings.llmBaseUrl.replace(/\/+$/, '')}/chat/completions`
     apiKey = settings.llmApiKey
     model = settings.llmModel
-    if (!settings.llmBaseUrl || !model) {
-      console.error('[polish] custom provider needs a base URL and model — using raw transcript')
-      return text
-    }
+    if (!settings.llmBaseUrl || !model) throw new Error('custom provider needs a base URL and model')
   } else {
     // 'groq' — falls back to the env key when none is stored in settings.
     url = GROQ_CHAT_URL
     apiKey = settings.groqApiKey || process.env.GROQ_API_KEY
     model = settings.polishModel
-    if (!apiKey) return text // no key configured — raw transcript is still useful
+    if (!apiKey) throw new Error('no API key configured')
   }
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0, // deterministic — formatting, not creativity
-        messages: [
-          { role: 'system', content: buildSystemPrompt(context, vocabulary) },
-          { role: 'user', content: text },
-        ],
-      }),
-    })
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0, // deterministic — formatting, not creativity
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
+    }),
+  })
 
-    if (!response.ok) {
-      throw new Error(`LLM API ${response.status}: ${await response.text()}`)
-    }
-
-    const data = await response.json()
-    const polished = data.choices?.[0]?.message?.content?.trim()
-    return polished || text
-  } catch (err) {
-    console.error(`[polish] failed, using raw transcript: ${err.message}`)
-    return text
+  if (!response.ok) {
+    throw new Error(`LLM API ${response.status}: ${await response.text()}`)
   }
+
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content?.trim() ?? ''
 }

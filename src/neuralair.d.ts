@@ -14,6 +14,11 @@ interface RecorderConfig {
   vad: VadConfig
 }
 
+interface IndicatorStageEvent {
+  stage: 'listening' | 'transcribing' | 'polishing' | 'done'
+  at: number
+}
+
 interface RendererSettings {
   userName: string
   language: string
@@ -75,6 +80,7 @@ interface Window {
     onRecorderStart: (callback: (config: RecorderConfig) => void) => void
     onRecorderStop: (callback: () => void) => void
     sendAutoStopped: () => void
+    sendLevel: (level: number) => void
     sendAudio: (bytes: Uint8Array, mimeType: string) => void
     // Settings window
     getSettings: () => Promise<RendererSettings>
@@ -99,5 +105,7 @@ interface Window {
     toggleRecording: () => void
     quitApp: () => void
     openExternal: (url: string) => void
+    onIndicatorLevel: (callback: (level: number) => void) => () => void
+    onIndicatorStage: (callback: (event: IndicatorStageEvent) => void) => () => void
   }
 }

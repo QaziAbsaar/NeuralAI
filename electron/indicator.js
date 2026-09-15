@@ -1,16 +1,19 @@
-// NeuralAir recording indicator — Phase 4 polish.
-// A tiny frameless, transparent, always-on-top window pinned to the
-// top-center of the screen while dictation is active. The renderer
-// inside it (`?window=indicator`) draws a pulsing sage dot; this module only
-// owns the window and its placement.
+// NeuralAir recording indicator / HUD pill.
+// A small frameless, transparent, always-on-top window pinned to the
+// top-center of the screen while a dictation is in flight. The renderer
+// inside it (`?window=indicator`) draws a pill with a pulsing dot, a live
+// mic-level bar, and the pipeline stage (listening → transcribing →
+// polishing → done); this module owns the window, its placement, and the
+// send channel main uses to feed it.
 import { BrowserWindow, screen } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const SIZE = 56 // window size in px — the dot and its glow pulse live inside
-const MARGIN = 24 // distance from the screen corner
+const WIDTH = 300 // pill width — dot + level bar + stage label
+const HEIGHT = 44
+const MARGIN = 24 // distance from the top edge
 
 let indicatorWin = null
 
@@ -19,7 +22,7 @@ let indicatorWin = null
 function topCenterPosition() {
   const { workArea } = screen.getPrimaryDisplay()
   return {
-    x: workArea.x + Math.round((workArea.width - SIZE) / 2),
+    x: workArea.x + Math.round((workArea.width - WIDTH) / 2),
     y: workArea.y + MARGIN,
   }
 }
@@ -33,14 +36,14 @@ export function showIndicator() {
   }
   const { x, y } = topCenterPosition()
   indicatorWin = new BrowserWindow({
-    width: SIZE,
-    height: SIZE,
+    width: WIDTH,
+    height: HEIGHT,
     x,
     y,
     frame: false,
     transparent: true,
     // Fully transparent ARGB background — without this the compositor paints
-    // the window's default background (the accent-colored box) behind the dot.
+    // the window's default background (the accent-colored box) behind the pill.
     backgroundColor: '#00000000',
     roundedCorners: false,
     hasShadow: false,
@@ -75,12 +78,19 @@ export function showIndicator() {
   indicatorWin.on('closed', () => {
     indicatorWin = null
   })
-  // Click-through: the indicator is informational only. A fully transparent
+  // Click-through: the pill is informational only. A fully transparent
   // window region would already pass clicks through; this makes the whole
-  // window ignore the pointer even over the dot.
+  // window ignore the pointer even over the pill.
   indicatorWin.setIgnoreMouseEvents(true)
 }
 
 export function hideIndicator() {
   if (indicatorWin && !indicatorWin.isDestroyed()) indicatorWin.hide()
+}
+
+// Push a message to the pill's renderer; no-op when it isn't open.
+export function sendToIndicator(channel, payload) {
+  if (indicatorWin && !indicatorWin.isDestroyed()) {
+    indicatorWin.webContents.send(channel, payload)
+  }
 }

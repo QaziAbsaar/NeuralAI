@@ -46,6 +46,10 @@ async function readClipboard() {
   return clipboard.readText()
 }
 
+// Exposed for the selection-transform flow, which needs to snapshot the
+// clipboard before simulating a copy.
+export { readClipboard }
+
 export async function writeClipboard(text) {
   if (isWayland) {
     // wl-copy reads stdin and forks to the background to serve the selection.
@@ -106,6 +110,24 @@ export async function injectText(text, notify) {
   return savedClipboard
 }
 
+// Simulate Ctrl+C to copy the current selection (selection-transform flow).
+// KEY_LEFTCTRL=29, KEY_C=46 — same strategy order as the paste.
+export async function copyKeystroke() {
+  if (isWayland) {
+    const ok = await new Promise((resolve) => {
+      execFile('ydotool', ['key', '29:1', '46:1', '46:0', '29:0'], { timeout: 2000 }, (err) => resolve(!err))
+    })
+    if (ok) return true
+  }
+  try {
+    await keyboard.pressKey(Key.LeftControl, Key.C)
+    await keyboard.releaseKey(Key.LeftControl, Key.C)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // "Send" voice command — one Enter after the pasted text. KEY_ENTER = 28.
 export async function pressEnter() {
   if (isWayland) {
@@ -122,8 +144,7 @@ export async function pressEnter() {
 
 // "Scratch that" support — delete the last n characters before the cursor.
 // KEY_BACKSPACE = 14 on Linux.
-export async function backspaceChars(n) {
-  if (n <= 0) return true
+export async function backspaceChars(n) {  if (n <= 0) return true
   if (isWayland) {
     const seq = []
     for (let i = 0; i < n; i++) seq.push('14:1', '14:0')

@@ -65,6 +65,23 @@ Parsed out of the transcript before any formatting, so they are never typed as t
 | "scratch that" | alone: undoes the previous dictation; mid-dictation: discards what you said before it |
 | "send" | presses Enter after the text lands (only when spoken last) |
 
+Saying a snippet's name (optionally "insert …") inserts that snippet verbatim.
+
+### Raw dictation
+
+For flags, paths, and code where cleanup breaks syntax — record one dictation with no LLM pass:
+
+- **Shift + your hold-to-talk key** (the evdev listener tracks the modifier), or
+- bind `neuralair --toggle-raw` to a desktop shortcut.
+
+### Selection transforms
+
+Select text anywhere, then run `neuralair --ask` (bind it to a shortcut) and speak an instruction — "make this more concise", "fix the grammar", "translate to Urdu". The selection is captured via the clipboard, rewritten by your configured LLM, and pasted over the original. With nothing selected it degrades to a normal dictation.
+
+### HUD pill
+
+While a dictation is in flight, a small pill floats top-center: pulsing dot and live mic-level bar while listening, then the pipeline stage with live elapsed time — Listening → Transcribing → Polishing → Done.
+
 ## Setup
 
 1. Get a Groq API key from [console.groq.com/keys](https://console.groq.com/keys).

@@ -22,7 +22,7 @@ let vadConfig: VadConfig | null = null
 let startedAt = 0
 let silentMs = 0
 
-function stopVad(): void {
+function stopMeter(): void {
   if (vadTimer !== null) {
     clearInterval(vadTimer)
     vadTimer = null
@@ -33,7 +33,10 @@ function stopVad(): void {
   vadConfig = null
 }
 
-function startVad(micStream: MediaStream): void {
+// The analyser serves two masters: VAD (toggle mode — silence ends the
+// recording) and the live level meter in the HUD pill (always). One tap on
+// the mic stream, one 100ms loop.
+function startMeter(micStream: MediaStream): void {
   audioCtx = new AudioContext()
   const source = audioCtx.createMediaStreamSource(micStream)
   analyser = audioCtx.createAnalyser()
@@ -45,7 +48,7 @@ function startVad(micStream: MediaStream): void {
   silentMs = 0
 
   vadTimer = setInterval(() => {
-    if (!analyser || !vadConfig) return
+    if (!analyser) return
     analyser.getFloatTimeDomainData(samples)
 
     // RMS loudness of the current window.
@@ -53,6 +56,11 @@ function startVad(micStream: MediaStream): void {
     for (const v of samples) sum += v * v
     const rms = Math.sqrt(sum / samples.length)
 
+    // Live level for the HUD pill (always on while recording).
+    window.neuralair?.sendLevel(rms)
+
+    // VAD applies in toggle mode only — hold mode stops on key release.
+    if (!vadConfig?.enabled) return
     if (rms < vadConfig.threshold) {
       silentMs += VAD_POLL_MS
     } else {
@@ -62,7 +70,7 @@ function startVad(micStream: MediaStream): void {
     const elapsed = performance.now() - startedAt
     if (elapsed >= vadConfig.minMs && silentMs >= vadConfig.silenceMs) {
       console.log('[recorder] VAD: silence detected, auto-stopping')
-      stopVad()
+      stopMeter()
       stopRecording()
       window.neuralair!.sendAutoStopped()
     }
@@ -95,7 +103,7 @@ async function startRecording(config: RecorderConfig): Promise<void> {
       window.neuralair!.sendAudio(new Uint8Array(buffer), mimeType)
     })
     // Release the mic immediately — never hold it open between dictations.
-    stopVad()
+    stopMeter()
     stream?.getTracks().forEach((track) => track.stop())
     stream = null
     mediaRecorder = null
@@ -105,8 +113,9 @@ async function startRecording(config: RecorderConfig): Promise<void> {
   mediaRecorder.start(250)
   console.log('[recorder] recording started', mimeType)
 
-  vadConfig = config?.vad ?? null
-  if (vadConfig?.enabled) startVad(stream)
+  // Level meter always; VAD logic only when enabled (toggle mode).
+  vadConfig = config?.vad ?? { enabled: false, threshold: 0.01, silenceMs: 1500, minMs: 1200 }
+  startMeter(stream)
 }
 
 function stopRecording(): void {

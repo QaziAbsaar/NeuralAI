@@ -961,10 +961,10 @@ code:focus-visible {
   }
 }
 
-/* ---------- Recording indicator window (Phase 4) ---------- */
-/* Tiny transparent always-on-top window, bottom-right of the screen. A sage
-   dot breathes in and out; two staggered rings expand from it so the pulse
-   reads as "live" from across the room. */
+/* ---------- Recording HUD pill window (Phase 4) ---------- */
+/* Transparent always-on-top pill, top-center of the screen: pulsing dot +
+   live mic-level bar while listening, then the pipeline stage with elapsed
+   milliseconds. */
 
 html:has(.indicator),
 body:has(.indicator),
@@ -976,30 +976,68 @@ body:has(.indicator),
 .indicator {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  background: var(--darkest-green);
+  border-radius: 22px;
+  box-shadow: 0 4px 18px rgba(52, 78, 65, 0.35);
 }
 
 .indicator-dot {
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--sage);
-  box-shadow: 0 0 10px 2px rgba(163, 177, 138, 0.55);
+  flex: none;
+}
+
+.indicator-dot.on {
+  box-shadow: 0 0 8px 2px rgba(163, 177, 138, 0.55);
   animation: indicator-breathe 1.8s ease-in-out infinite;
 }
 
-.indicator-ring {
-  position: absolute;
-  width: 14px;
-  height: 14px;
+/* Static marker while a processing stage runs — steady, not pulsing. */
+.indicator-ring-static {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   border: 2px solid var(--sage);
-  animation: indicator-ping 1.8s ease-out infinite;
+  flex: none;
 }
 
-.indicator-ring-late {
-  animation-delay: 0.9s;
+/* Live mic level: a 90px trough that fills with the RMS level. */
+.indicator-level {
+  width: 90px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(163, 177, 138, 0.25);
+  overflow: hidden;
+  flex: none;
+}
+
+.indicator-level-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--sage);
+  transition: width 90ms linear;
+}
+
+.indicator-label {
+  font: 500 13px var(--sans);
+  color: var(--bg-light);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.indicator-ms {
+  font-size: 11px;
+  color: var(--sage);
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes indicator-breathe {
@@ -1012,25 +1050,13 @@ body:has(.indicator),
   }
 }
 
-@keyframes indicator-ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.85;
-  }
-  70%,
-  100% {
-    transform: scale(3.2);
-    opacity: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .indicator-dot,
-  .indicator-ring {
+  .indicator-dot.on {
     animation: none;
+    opacity: 0.85;
   }
 
-  .indicator-dot {
-    opacity: 0.85;
+  .indicator-level-fill {
+    transition: none;
   }
 }

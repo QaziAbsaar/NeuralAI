@@ -36,12 +36,12 @@ import { createTray, setStatus } from './tray.js'
 import { registerHotkey, unregisterAllHotkeys } from './hotkey.js'
 import { loadEnv, transcribe } from './transcribe.js'
 import { getActiveWindowContext } from './context.js'
-import { polishTranscript } from './polish.js'
-import { injectText, backspaceChars, writeClipboard, pressEnter } from './inject.js'
+import { polishTranscript, transformSelection } from './polish.js'
+import { injectText, backspaceChars, writeClipboard, pressEnter, copyKeystroke, readClipboard } from './inject.js'
 import { recordDictation, popDictation, listHistory } from './history.js'
 import { parseVoiceCommands, segmentsToText, matchSnippet } from './voicecommands.js'
 import { startHoldKeyListener } from './holdkey.js'
-import { showIndicator, hideIndicator } from './indicator.js'
+import { showIndicator, hideIndicator, sendToIndicator } from './indicator.js'
 import { loadSettings, saveSettings, settingsForRenderer, applyToEnv, listModels } from './settings.js'
 import { recordUsage, usageSummary } from './usage.js'
 
@@ -50,6 +50,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Toggle invoked from a second instance ("--toggle") — wired up after ready.
 let toggleRecording = () => {}
 let undoLastDictation = () => {}
+let startAsk = () => {}
 
 const gotInstanceLock = app.requestSingleInstanceLock()
 if (!gotInstanceLock) {
@@ -139,6 +140,18 @@ app.whenReady().then(() => {
   let recordingDurationMs = 0 // captured at stop, spent when the audio arrives
   let rawRecording = false // one-off exact mode for THIS dictation (Shift+hotkey / --toggle-raw)
 
+  // HUD pill lifecycle: shown while listening, stays up through the
+  // processing stages, hides shortly after 'done'. The stage payload carries
+  // a timestamp so the pill can show live elapsed time per stage.
+  let hideTimer = null
+  function stageIndicator(stage) {
+    sendToIndicator('indicator:stage', { stage, at: Date.now() })
+    if (stage === 'done') {
+      clearTimeout(hideTimer)
+      hideTimer = setTimeout(hideIndicator, 900)
+    }
+  }
+
   const startRecording = (source, raw = false) => {
     if (recording) return
     recording = true
@@ -148,6 +161,7 @@ app.whenReady().then(() => {
     setStatus('recording')
     broadcastStatus('recording')
     showIndicator()
+    stageIndicator('listening')
     if (hiddenWin.isDestroyed()) return
     // VAD auto-stop — active in toggle mode only. Hold mode stops on key
     // release; cutting the user off mid-pause there would be wrong.
@@ -169,11 +183,31 @@ app.whenReady().then(() => {
     console.log('[main] -> idle')
     setStatus('idle')
     broadcastStatus('idle')
-    hideIndicator()
+    // Indicator stays visible: it now shows the processing stages and hides
+    // itself on 'done' (stageIndicator).
     if (hiddenWin.isDestroyed()) return
     hiddenWin.webContents.send('recorder:stop')
   }
   toggleRecording = (raw = false) => (recording ? stopRecording() : startRecording('toggle', raw))
+
+  // Selection-transform flow ("--ask"): copy the current selection, record a
+  // spoken instruction, and let the LLM rewrite the selection. The paste
+  // overwrites the selection in the target app. If nothing was selected (the
+  // clipboard didn't change), it degrades to a normal dictation.
+  let askSelection = null
+  startAsk = async () => {
+    if (recording) return
+    const before = await readClipboard()
+    const copied = await copyKeystroke()
+    if (copied) {
+      // Give the target app a beat to serve the selection to the clipboard.
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const after = await readClipboard()
+      if (after !== before && after.trim()) askSelection = after
+    }
+    console.log(`[ask] selection transform: ${askSelection ? `${askSelection.length} chars selected` : 'no selection — normal dictation'}`)
+    startRecording('toggle')
+  }
 
   // Renderer stopped itself (VAD silence) — sync state and tray icon.
   ipcMain.on('recorder:auto-stopped', () => {
@@ -181,8 +215,12 @@ app.whenReady().then(() => {
     recordingDurationMs = Date.now() - recordingStartedAt
     setStatus('idle')
     broadcastStatus('idle')
-    hideIndicator()
     console.log('[main] auto-stopped (VAD) -> idle')
+  })
+
+  // Live mic level from the recorder's analyser — forwarded to the HUD pill.
+  ipcMain.on('recorder:level', (_event, level) => {
+    sendToIndicator('indicator:level', level)
   })
 
   // Dashboard window (Phase 3) — the app's only visible UI: home with stats
@@ -316,15 +354,53 @@ app.whenReady().then(() => {
   ipcMain.on('recorder:audio', async (_event, bytes, mimeType) => {
     console.log(`[recorder] captured ${bytes.byteLength} bytes (${mimeType}) in memory`)
     try {
+      stageIndicator('transcribing')
       const transcript = await transcribe(bytes, mimeType)
       console.log(`[transcript] ${transcript}`)
-      if (!transcript.trim()) return
+      if (!transcript.trim()) {
+        askSelection = null // aborted --ask must not hijack the next dictation
+        return
+      }
       if (isHallucination(transcript, recordingDurationMs)) {
         console.log('[pipeline] short-clip hallucination discarded, nothing typed')
         return
       }
       const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length
       recordUsage(recordingDurationMs / 1000, wordCount)
+
+      // Selection-transform dictation (--ask): the transcript is an
+      // instruction for rewriting the captured selection, not text to type.
+      if (askSelection !== null) {
+        const selection = askSelection
+        askSelection = null
+        console.log(`[ask] instruction: ${transcript}`)
+        stageIndicator('polishing')
+        let result = selection
+        try {
+          result = await transformSelection(selection, transcript)
+        } catch (err) {
+          console.error(`[ask] transform failed, selection untouched: ${err.message}`)
+        }
+        if (process.env.NEURALAIR_AUTOTEST) {
+          console.log('[ask] skipped (autotest):', JSON.stringify(result.slice(0, 60)))
+          return
+        }
+        const ok = await injectText(result, (msg) => {
+          if (Notification.isSupported()) new Notification({ body: msg }).show()
+        })
+        if (ok !== false) {
+          recordDictation({
+            ts: Date.now(),
+            transcript: `[transform: ${transcript}]`,
+            polished: result,
+            wordCount,
+            audioSeconds: Math.round(recordingDurationMs / 1000),
+            clipboardBefore: ok,
+          })
+          broadcastHistory()
+        }
+        return
+      }
 
       // Voice commands (Phase 4) — parsed out before the LLM sees anything,
       // so command phrases are never typed literally.
@@ -369,6 +445,7 @@ app.whenReady().then(() => {
       if (effectiveMode === 'exact') {
         polished = spoken
       } else {
+        stageIndicator('polishing')
         const polishedParts = await Promise.all(
           textSegments.map((s) => polishTranscript(s.text, context, vocabulary).catch(() => s.text)),
         )
@@ -399,6 +476,10 @@ app.whenReady().then(() => {
       }
     } catch (err) {
       console.error(`[pipeline] failed: ${err.message}`)
+    } finally {
+      // Whatever happened — empty transcript, hallucination discard, snippet
+      // insert, error — the pill's lifecycle ends here.
+      stageIndicator('done')
     }
   })
 
@@ -433,6 +514,7 @@ app.whenReady().then(() => {
 app.on('second-instance', (_event, argv) => {
   if (argv.includes('--toggle')) toggleRecording(false)
   if (argv.includes('--toggle-raw')) toggleRecording(true)
+  if (argv.includes('--ask')) startAsk()
   if (argv.includes('--scratch')) undoLastDictation()
 })
 
