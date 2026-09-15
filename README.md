@@ -2,7 +2,6 @@
   <img src="Logo.png" alt="NeuralAir logo" width="256" />
 </p>
 
-<h1 align="center">NeuralAir</h1>
 
 <p align="center">
   <strong>Frictionless voice dictation for your desktop.<br/>Hold a key, speak, release — polished text lands at your cursor.</strong>
