@@ -8,6 +8,17 @@ import { useState } from 'react'
 const keyHint = (code: number) =>
   code === 0 ? 'off' : code === 67 ? 'F9' : code === 87 ? 'F11' : code === 88 ? 'F12' : `code ${code}`
 
+// Known speech models per STT provider — suggestions for the model field,
+// not a restriction (any value can be typed). Mirrors each provider's
+// current catalog; defaults live in electron/transcribe.js.
+const SPEECH_MODELS: Record<string, string[]> = {
+  groq: ['whisper-large-v3-turbo', 'whisper-large-v3', 'distil-whisper-large-v3-en'],
+  openai: ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'gpt-transcribe', 'whisper-1'],
+  deepgram: ['nova-3', 'nova-2', 'nova-2-medical', 'enhance', 'base'],
+  assemblyai: ['universal-2', 'universal-3-5-pro'],
+  elevenlabs: ['scribe_v1'],
+}
+
 export default function SettingsView({
   settings,
   onSaved,
@@ -110,49 +121,49 @@ export default function SettingsView({
             <button
               type="button"
               className={draft.sttProvider === 'auto' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'auto' })}
+              onClick={() => patch({ sttProvider: 'auto', sttModel: '' })}
             >
               Auto
             </button>
             <button
               type="button"
               className={draft.sttProvider === 'groq' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'groq' })}
+              onClick={() => patch({ sttProvider: 'groq', sttModel: '' })}
             >
               Groq
             </button>
             <button
               type="button"
               className={draft.sttProvider === 'openai' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'openai' })}
+              onClick={() => patch({ sttProvider: 'openai', sttModel: '' })}
             >
               OpenAI
             </button>
             <button
               type="button"
               className={draft.sttProvider === 'deepgram' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'deepgram' })}
+              onClick={() => patch({ sttProvider: 'deepgram', sttModel: '' })}
             >
               Deepgram
             </button>
             <button
               type="button"
               className={draft.sttProvider === 'assemblyai' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'assemblyai' })}
+              onClick={() => patch({ sttProvider: 'assemblyai', sttModel: '' })}
             >
               AssemblyAI
             </button>
             <button
               type="button"
               className={draft.sttProvider === 'elevenlabs' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'elevenlabs' })}
+              onClick={() => patch({ sttProvider: 'elevenlabs', sttModel: '' })}
             >
               ElevenLabs
             </button>
             <button
               type="button"
               className={draft.sttProvider === 'local' ? 'active' : ''}
-              onClick={() => patch({ sttProvider: 'local' })}
+              onClick={() => patch({ sttProvider: 'local', sttModel: '' })}
             >
               Local
             </button>
@@ -163,54 +174,65 @@ export default function SettingsView({
           </span>
         </div>
 
-        {['openai', 'deepgram', 'assemblyai', 'elevenlabs'].includes(draft.sttProvider) && (
+        {['groq', 'openai', 'deepgram', 'assemblyai', 'elevenlabs'].includes(draft.sttProvider) && (
           <>
             <label className="field">
-              <span>Model (optional)</span>
+              <span>Speech model (optional)</span>
               <input
                 className="input"
+                list="stt-models"
                 value={draft.sttModel}
                 placeholder={
-                  draft.sttProvider === 'openai'
-                    ? 'gpt-4o-mini-transcribe (default) — or gpt-4o-transcribe'
-                    : draft.sttProvider === 'deepgram'
-                      ? 'nova-3 (default) — or nova-2'
-                      : draft.sttProvider === 'assemblyai'
-                        ? 'universal-2 (default) — or universal-3-5-pro'
-                        : 'scribe_v1 (default)'
+                  (
+                    {
+                      groq: 'whisper-large-v3-turbo (default)',
+                      openai: 'gpt-4o-mini-transcribe (default)',
+                      deepgram: 'nova-3 (default)',
+                      assemblyai: 'universal-2 (default)',
+                      elevenlabs: 'scribe_v1 (default)',
+                    } as Record<string, string>
+                  )[draft.sttProvider]
                 }
                 onChange={(e) => patch({ sttModel: e.target.value })}
               />
+              <datalist id="stt-models">
+                {(SPEECH_MODELS[draft.sttProvider] ?? []).map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+              <span className="hint">Pick a suggestion or type any model name the provider offers.</span>
             </label>
-            <label className="field">
-              <span>
-                {draft.sttProvider === 'openai'
-                  ? 'OpenAI API key'
-                  : draft.sttProvider === 'deepgram'
-                    ? 'Deepgram API key'
-                    : draft.sttProvider === 'assemblyai'
-                      ? 'AssemblyAI API key'
-                      : 'ElevenLabs API key'}
-              </span>
-              <input
-                type="password"
-                className="input"
-                value={sttKeyInput}
-                placeholder={
-                  ({
-                    openai: draft.hasOpenaiSttKey,
-                    deepgram: draft.hasDeepgramSttKey,
-                    assemblyai: draft.hasAssemblyaiSttKey,
-                    elevenlabs: draft.hasElevenlabsSttKey,
-                  }[draft.sttProvider as 'openai'])
-                    ? 'Saved — enter a new key to replace it'
-                    : 'sk-… / key from the provider console'
-                }
-                onChange={(e) => setSttKeyInput(e.target.value)}
-                autoComplete="off"
-              />
-              <span className="hint">Stored encrypted with your system keychain.</span>
-            </label>
+            {draft.sttProvider !== 'groq' && (
+              <label className="field">
+                <span>
+                  {draft.sttProvider === 'openai'
+                    ? 'OpenAI API key'
+                    : draft.sttProvider === 'deepgram'
+                      ? 'Deepgram API key'
+                      : draft.sttProvider === 'assemblyai'
+                        ? 'AssemblyAI API key'
+                        : 'ElevenLabs API key'}
+                </span>
+                <input
+                  type="password"
+                  className="input"
+                  value={sttKeyInput}
+                  placeholder={
+                    ({
+                      openai: draft.hasOpenaiSttKey,
+                      deepgram: draft.hasDeepgramSttKey,
+                      assemblyai: draft.hasAssemblyaiSttKey,
+                      elevenlabs: draft.hasElevenlabsSttKey,
+                    }[draft.sttProvider as 'openai'])
+                      ? 'Saved — enter a new key to replace it'
+                      : 'sk-… / key from the provider console'
+                  }
+                  onChange={(e) => setSttKeyInput(e.target.value)}
+                  autoComplete="off"
+                />
+                <span className="hint">Stored encrypted with your system keychain.</span>
+              </label>
+            )}
           </>
         )}
 

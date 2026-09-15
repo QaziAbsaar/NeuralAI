@@ -60,10 +60,10 @@ function whisperPaths() {
   }
 }
 
-async function transcribeGroq(bytes, mimeType, apiKey) {
+async function transcribeGroq(bytes, mimeType, apiKey, model) {
   const form = new FormData()
   form.append('file', new Blob([bytes], { type: mimeType }), 'dictation.webm')
-  form.append('model', GROQ_MODEL)
+  form.append('model', model)
   form.append('response_format', 'json')
   form.append('temperature', '0')
   form.append('prompt', PROMPT_HINT)
@@ -269,7 +269,7 @@ async function transcribeCloud(provider, bytes, mimeType) {
     case 'groq': {
       const apiKey = process.env.GROQ_API_KEY
       if (!apiKey) throw new Error('GROQ_API_KEY not set (put it in .env or settings)')
-      return transcribeGroq(bytes, mimeType, apiKey)
+      return transcribeGroq(bytes, mimeType, apiKey, model || GROQ_MODEL)
     }
     case 'openai': {
       if (!s.openaiSttKey) throw new Error('OpenAI STT key not set (Settings → Providers)')
