@@ -239,9 +239,22 @@ export default function Dashboard() {
             </header>
 
             <section className="banner">
-              <h2>Connect with Flow Hub in another app</h2>
-              <p>Flow works anywhere you type.</p>
-              <button type="button" className="banner-btn">Get started</button>
+              {/* Native status, not marketing copy: either the live dictation
+                  state, or the one setup step standing between the user and
+                  their first dictation. */}
+              <h2>NeuralAir is running globally — press your hotkey anywhere to dictate</h2>
+              <p>
+                {settings?.hasApiKey
+                  ? settings.sttProvider === 'local'
+                    ? 'Transcribing locally with whisper.cpp — nothing leaves this machine.'
+                    : 'Transcribing on demand. Audio stays in memory and is never written to disk.'
+                  : 'Add a Groq API key in Settings to start dictating.'}
+              </p>
+              {!settings?.hasApiKey && (
+                <button type="button" className="banner-btn" onClick={() => setNav('settings')}>
+                  Open Settings
+                </button>
+              )}
             </section>
 
             <section className="feed" aria-label="Transcription history">
