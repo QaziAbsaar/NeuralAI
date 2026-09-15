@@ -1,7 +1,7 @@
 {
   "name": "neuralair",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Free, open-source, privacy-first voice dictation and AI transcription desktop app.",
   "type": "module",
   "main": "electron/main.js",
