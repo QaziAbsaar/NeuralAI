@@ -2,32 +2,74 @@
   <img src="Logo.png" alt="NeuralAir logo" width="256" />
 </p>
 
-Free, open-source, privacy-first alternative to Wispr Flow. Voice dictation and AI transcription desktop app.
+<h1 align="center">NeuralAir</h1>
 
-- **Zero weekly limits** — Bring-Your-Own-Key model (Groq API, or any OpenAI-compatible endpoint).
+<p align="center">
+  <strong>Frictionless voice dictation for your desktop.<br/>Hold a key, speak, release — polished text lands at your cursor.</strong>
+</p>
+
+<p align="center">
+  <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT-588157?style=flat-square" /></a>
+  <a href="#setup"><img alt="Platform" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-a3b18a?style=flat-square" /></a>
+  <a href="#setup"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-ready-3a5a40?style=flat-square" /></a>
+  <a href="#providers"><img alt="Offline" src="https://img.shields.io/badge/offline-capable-344e41?style=flat-square" /></a>
+  <a href="#providers"><img alt="Providers" src="https://img.shields.io/badge/STT-Groq%20%7C%20Deepgram%20%7C%20whisper.cpp-dad7cd?style=flat-square&color=588157" /></a>
+  <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-588157?style=flat-square" />
+</p>
+
+<p align="center">
+  <img src="flow_bar.png" alt="NeuralAir HUD pill showing live pipeline stages" width="640" />
+</p>
+
+Free, open-source, privacy-first alternative to Wispr Flow. Voice dictation and AI transcription desktop app that lives in your system tray and gets out of the way.
+
+- **Zero weekly limits** — Bring-Your-Own-Key model (Groq API, or any OpenAI-compatible endpoint). You pay only for what you use, directly to the provider.
 - **Privacy-first** — No screen recording, no telemetry, audio never touches disk.
 - **Offline-ready** — Local `whisper.cpp` transcription with automatic failover, and an optional no-cloud mode for the full pipeline.
+- **Cross-platform** — Linux (X11 *and* Wayland), macOS, Windows.
+
+## Screenshots
+
+| Home | Settings |
+|---|---|
+| <img src="home.png" alt="NeuralAir dashboard: dictation history, model picker, status card" width="420" /> | <img src="settings.png" alt="NeuralAir provider settings" width="420" /> |
+
+| Transform settings | HUD pill (in-flight dictation) |
+|---|---|
+| <img src="transform_settings.png" alt="Transform settings: output casing options" width="420" /> | <img src="flow_bar.png" alt="HUD pill with live mic level and pipeline stage" width="420" /> |
 
 ## Core Loop
 
 Hold a global hotkey → speak → release → audio is transcribed with Whisper → text is polished by an LLM using the active window as context → text is typed into the active window.
 
+```
+ ┌─ hotkey ─┐    ┌──────────┐    ┌───────────┐    ┌───────────┐    ┌──────────┐
+ │  record  │ →  │ Whisper  │ →  │ active-win │ →  │ LLM polish │ →  │  paste   │
+ │ in memory│    │   STT    │    │  context   │    │  per app   │    │ @ cursor │
+ └──────────┘    └──────────┘    └───────────┘    └───────────┘    └──────────┘
+```
+
 ## Features
 
-- Background-only app: lives in the system tray, no windows.
-- In-memory audio capture — dictations never write temp files to disk.
-- Fast transcription via Groq `whisper-large-v3-turbo`, with the dictation language pinned to stop Whisper guessing wrong languages.
-- LLM text polish (punctuation, filler-word removal) — any failure falls back to the raw transcript.
-- Text injection via clipboard + single paste, with your clipboard saved and restored afterwards.
+- **Background-only app** — lives in the system tray, no windows.
+- **In-memory audio capture** — dictations never write temp files to disk.
+- **Fast transcription** via Groq `whisper-large-v3-turbo`, with the dictation language pinned to stop Whisper guessing wrong languages.
+- **LLM text polish** (punctuation, filler-word removal) — any failure falls back to the raw transcript.
+- **Text injection** via clipboard + single paste, with your clipboard saved and restored afterwards.
 - **Toggle mode** with **VAD auto-stop**: tap the key, speak, stop talking — silence ends the recording (~1.5s).
 - **Hold-to-talk**: hold a key while speaking, release to stop.
 - **"Scratch that"**: undo the last dictation (backspaces it out, restores your clipboard).
 - **Voice commands**: say "new paragraph", "scratch that" or "send" — parsed out before the AI pass, never typed as literal text.
+- **Raw dictation mode** — skip the LLM for flags, paths and code where cleanup breaks syntax.
+- **Selection transforms** — select text, speak an instruction ("make this more concise", "translate to Urdu"), get it rewritten in place.
 - **Local transcription**: `whisper.cpp` offline fallback with auto-failover when Groq is down or slow.
 - **Multi-provider BYOK**: transcription (Groq / local) and formatting (Groq / any OpenAI-compatible endpoint / none) are independently configurable.
-- Dictation history (last 100), persisted across restarts.
-- Recording status in the tray.
-- Works on X11 and Wayland.
+- **Dictation history** (last 100), persisted across restarts.
+- **Custom vocabulary** — feed names and jargon to the polish prompt.
+- **Usage insights** — words per day, wpm, day streak, estimated cost.
+- **HUD pill** — live mic level and pipeline stage while a dictation is in flight.
+- **Recording status in the tray.**
+- **Works on X11 and Wayland.**
 
 ## Settings window
 
